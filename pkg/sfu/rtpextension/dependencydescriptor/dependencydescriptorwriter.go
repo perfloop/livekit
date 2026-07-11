@@ -51,7 +51,6 @@ func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructu
 
 func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
 	w.writer = NewBitStreamWriter(buf)
-	w.templateMatched = false
 }
 
 func (w *DependencyDescriptorWriter) Write() error {
@@ -90,59 +89,35 @@ func (w *DependencyDescriptorWriter) Write() error {
 	return nil
 }
 
-func (w *DependencyDescriptorWriter) isMatchValid() bool {
-	if !w.templateMatched {
-		return false
-	}
-	if w.structure == nil || len(w.structure.Templates) <= w.bestTemplate.TemplateIdx {
-		return false
-	}
-	t := w.structure.Templates[w.bestTemplate.TemplateIdx]
-	fd := w.descriptor.FrameDependencies
-	if fd == nil {
-		return false
-	}
+func (w *DependencyDescriptorWriter) findBestTemplate() error {
+	if w.templateMatched && w.structure != nil && w.descriptor != nil {
+		idx := w.bestTemplate.TemplateIdx
+		if idx >= 0 && idx < len(w.structure.Templates) {
+			t := w.structure.Templates[idx]
+			fd := w.descriptor.FrameDependencies
+			if fd != nil && fd.SpatialId == t.SpatialId && fd.TemporalId == t.TemporalId {
+				// Fast-path: Check if this is the only template in this layer.
+				// If so, we can directly re-evaluate calculateMatch and skip the search loop!
+				isOnly := true
+				if idx > 0 {
+					prev := w.structure.Templates[idx-1]
+					if prev.SpatialId == t.SpatialId && prev.TemporalId == t.TemporalId {
+						isOnly = false
+					}
+				}
+				if idx < len(w.structure.Templates)-1 {
+					next := w.structure.Templates[idx+1]
+					if next.SpatialId == t.SpatialId && next.TemporalId == t.TemporalId {
+						isOnly = false
+					}
+				}
 
-	if fd.SpatialId != t.SpatialId || fd.TemporalId != t.TemporalId {
-		return false
-	}
-
-	// Compare FrameDiffs
-	if (fd.FrameDiffs == nil) != (t.FrameDiffs == nil) {
-		return false
-	}
-	if !slices.Equal(fd.FrameDiffs, t.FrameDiffs) {
-		return false
-	}
-
-	// Compare DecodeTargetIndications
-	if (fd.DecodeTargetIndications == nil) != (t.DecodeTargetIndications == nil) {
-		return false
-	}
-	if !slices.Equal(fd.DecodeTargetIndications, t.DecodeTargetIndications) {
-		return false
-	}
-
-	// Compare ChainDiffs
-	for i := 0; i < w.structure.NumChains; i++ {
-		if w.activeChains&(1<<i) != 0 {
-			fdHas := len(fd.ChainDiffs) > i
-			tHas := len(t.ChainDiffs) > i
-			if fdHas != tHas {
-				return false
-			}
-			if fdHas && fd.ChainDiffs[i] != t.ChainDiffs[i] {
-				return false
+				if isOnly {
+					w.bestTemplate = w.calculateMatch(idx, t)
+					return nil
+				}
 			}
 		}
-	}
-
-	return true
-}
-
-func (w *DependencyDescriptorWriter) findBestTemplate() error {
-	if w.isMatchValid() {
-		return nil
 	}
 
 	// Find templates with same spatial and temporal layer of frame dependency.
@@ -504,6 +479,7 @@ func (w *DependencyDescriptorWriter) writeFrameChains() error {
 const mandatoryFieldSize = 1 + 1 + 6 + 16
 
 func (w *DependencyDescriptorWriter) ValueSizeBits() int {
+	_ = w.findBestTemplate()
 	valueSizeBits := mandatoryFieldSize + w.bestTemplate.ExtraSizeBits
 	if w.hasExtendedFields() {
 		valueSizeBits += 5

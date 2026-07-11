@@ -31,7 +31,6 @@ func TestDependencyDescriptorWriterLifecycle(t *testing.T) {
 		t.Fatalf("failed to get valid structure and descriptor: %v", err)
 	}
 
-	// 1. Test normal creation and Write
 	buf := make([]byte, 1024)
 	writer, err := NewDependencyDescriptorWriter(buf, structure, ^uint32(0), desc)
 	if err != nil {
@@ -42,7 +41,7 @@ func TestDependencyDescriptorWriterLifecycle(t *testing.T) {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	// 2. Test descriptor mutation before Write (e.g. changing SpatialId or TemporalId)
+	// 1. Test descriptor mutation before Write (e.g. changing SpatialId or TemporalId)
 	descClone := *desc
 	fdClone := *desc.FrameDependencies
 	descClone.FrameDependencies = &fdClone
@@ -65,7 +64,6 @@ func TestDependencyDescriptorWriterLifecycle(t *testing.T) {
 		t.Fatalf("could not find a different valid template to mutate to")
 	}
 
-	// Create writer with clone
 	writer2, err := NewDependencyDescriptorWriter(buf, structure, ^uint32(0), &descClone)
 	if err != nil {
 		t.Fatalf("NewDependencyDescriptorWriter failed: %v", err)
@@ -75,23 +73,20 @@ func TestDependencyDescriptorWriterLifecycle(t *testing.T) {
 	descClone.FrameDependencies.SpatialId = targetSpatialId
 	descClone.FrameDependencies.TemporalId = targetTemporalId
 
-	// Write() must select the template matching the mutated spatial/temporal IDs!
 	if err := writer2.Write(); err != nil {
 		t.Fatalf("Write should have succeeded with mutated template: %v", err)
 	}
 
-	// Ensure the template used is the mutated one (bestTemplate.TemplateIdx spatial/temporal should match)
 	selectedTemplate := structure.Templates[writer2.bestTemplate.TemplateIdx]
 	if selectedTemplate.SpatialId != targetSpatialId || selectedTemplate.TemporalId != targetTemporalId {
 		t.Errorf("template not updated after mutation! got spatial %d temporal %d, expected %d and %d",
 			selectedTemplate.SpatialId, selectedTemplate.TemporalId, targetSpatialId, targetTemporalId)
 	}
 
-	// 3. Test mutation to an unsupported/invalid layer (no template found)
+	// 2. Test mutation to an unsupported/invalid layer (no template found)
 	descClone.FrameDependencies.SpatialId = 99
 	descClone.FrameDependencies.TemporalId = 99
 
-	// Write() must propagate the error correctly because the layer is unsupported!
 	if err := writer2.Write(); err == nil {
 		t.Errorf("expected template-not-found error, but got nil")
 	} else {
@@ -101,14 +96,13 @@ func TestDependencyDescriptorWriterLifecycle(t *testing.T) {
 		}
 	}
 
-	// 4. Test writer reuse via ResetBuf with mutated states
+	// 3. Test writer reuse via ResetBuf with mutated states
 	descClone.FrameDependencies.SpatialId = originalSpatialId
 	descClone.FrameDependencies.TemporalId = originalTemporalId
 
 	newBuf := make([]byte, 1024)
 	writer2.ResetBuf(newBuf)
 
-	// Write should succeed now and use the restored valid template
 	if err := writer2.Write(); err != nil {
 		t.Fatalf("Write failed after ResetBuf and restoring valid template: %v", err)
 	}
@@ -126,13 +120,20 @@ func TestDependencyDescriptorWriterNilToEmpty(t *testing.T) {
 		t.Fatalf("failed to get valid structure and descriptor: %v", err)
 	}
 
-	// Let's copy/clone the descriptor to avoid modifying the original globally
 	descClone := *desc
 	fdClone := *desc.FrameDependencies
-
-	// Start with non-empty FrameDiffs
 	fdClone.FrameDiffs = []int{1}
 	descClone.FrameDependencies = &fdClone
+
+	// Base non-cached authoritative bytes
+	extAuthoritative := DependencyDescriptorExtension{
+		Structure:  structure,
+		Descriptor: &descClone,
+	}
+	expectedBytes, err := extAuthoritative.MarshalWithActiveChains(^uint32(0))
+	if err != nil {
+		t.Fatalf("MarshalWithActiveChains failed: %v", err)
+	}
 
 	buf := make([]byte, 1024)
 	writer, err := NewDependencyDescriptorWriter(buf, structure, ^uint32(0), &descClone)
@@ -141,31 +142,108 @@ func TestDependencyDescriptorWriterNilToEmpty(t *testing.T) {
 	}
 
 	// First Write
+	sizeBits := writer.ValueSizeBits()
+	writeBuf := make([]byte, (sizeBits+7)/8)
+	writer.ResetBuf(writeBuf)
 	if err := writer.Write(); err != nil {
 		t.Fatalf("first Write failed: %v", err)
 	}
 
-	// Now mutate FrameDiffs to nil
-	fdClone.FrameDiffs = nil
-
-	// Reset buf and write - should invalidate cache because nilness changed!
-	writer.ResetBuf(make([]byte, 1024))
-	if err := writer.Write(); err != nil {
-		t.Fatalf("second Write failed after mutating FrameDiffs to nil: %v", err)
+	if hex.EncodeToString(writeBuf) != hex.EncodeToString(expectedBytes) {
+		t.Fatalf("mismatch on first write: got %x, expected %x", writeBuf, expectedBytes)
 	}
 
-	// Mutate FrameDiffs back to empty slice []int{}
-	fdClone.FrameDiffs = []int{}
+	// Mutate FrameDiffs to nil
+	fdClone.FrameDiffs = nil
+	expectedBytesNil, err := extAuthoritative.MarshalWithActiveChains(^uint32(0))
+	if err != nil {
+		t.Fatalf("MarshalWithActiveChains failed with nil FrameDiffs: %v", err)
+	}
 
-	// Reset buf and write - should invalidate cache again because nilness changed from nil to empty slice!
-	writer.ResetBuf(make([]byte, 1024))
+	sizeBitsNil := writer.ValueSizeBits()
+	writeBufNil := make([]byte, (sizeBitsNil+7)/8)
+	writer.ResetBuf(writeBufNil)
 	if err := writer.Write(); err != nil {
-		t.Fatalf("third Write failed after mutating FrameDiffs to empty slice: %v", err)
+		t.Fatalf("second Write failed with nil FrameDiffs: %v", err)
+	}
+
+	if hex.EncodeToString(writeBufNil) != hex.EncodeToString(expectedBytesNil) {
+		t.Fatalf("mismatch on nil FrameDiffs: got %x, expected %x", writeBufNil, expectedBytesNil)
+	}
+
+	// Mutate FrameDiffs back to non-empty
+	fdClone.FrameDiffs = []int{1}
+	sizeBitsRestored := writer.ValueSizeBits()
+	writeBufRestored := make([]byte, (sizeBitsRestored+7)/8)
+	writer.ResetBuf(writeBufRestored)
+	if err := writer.Write(); err != nil {
+		t.Fatalf("third Write failed: %v", err)
+	}
+
+	if hex.EncodeToString(writeBufRestored) != hex.EncodeToString(expectedBytes) {
+		t.Fatalf("mismatch on restored FrameDiffs: got %x, expected %x", writeBufRestored, expectedBytes)
+	}
+}
+
+func TestDependencyDescriptorWriterInPlaceMutation(t *testing.T) {
+	structure, desc, err := getValidStructureAndDescriptor()
+	if err != nil {
+		t.Fatalf("failed to get valid structure and descriptor: %v", err)
+	}
+
+	descClone := *desc
+	fdClone := *desc.FrameDependencies
+	fdClone.FrameDiffs = []int{1}
+	descClone.FrameDependencies = &fdClone
+
+	// Base non-cached authoritative bytes
+	extAuthoritative := DependencyDescriptorExtension{
+		Structure:  structure,
+		Descriptor: &descClone,
+	}
+	expectedBytes, err := extAuthoritative.MarshalWithActiveChains(^uint32(0))
+	if err != nil {
+		t.Fatalf("MarshalWithActiveChains failed: %v", err)
+	}
+
+	buf := make([]byte, 1024)
+	writer, err := NewDependencyDescriptorWriter(buf, structure, ^uint32(0), &descClone)
+	if err != nil {
+		t.Fatalf("NewDependencyDescriptorWriter failed: %v", err)
+	}
+
+	// First Write
+	sizeBits := writer.ValueSizeBits()
+	writeBuf := make([]byte, (sizeBits+7)/8)
+	writer.ResetBuf(writeBuf)
+	if err := writer.Write(); err != nil {
+		t.Fatalf("first Write failed: %v", err)
+	}
+
+	if hex.EncodeToString(writeBuf) != hex.EncodeToString(expectedBytes) {
+		t.Fatalf("mismatch: got %x, expected %x", writeBuf, expectedBytes)
+	}
+
+	// Mutate slice in-place: e.g. change fdClone.FrameDiffs[0] from 1 to 99
+	fdClone.FrameDiffs[0] = 99
+	expectedBytesMutated, err := extAuthoritative.MarshalWithActiveChains(^uint32(0))
+	if err != nil {
+		t.Fatalf("MarshalWithActiveChains failed: %v", err)
+	}
+
+	sizeBitsMutated := writer.ValueSizeBits()
+	writeBufMutated := make([]byte, (sizeBitsMutated+7)/8)
+	writer.ResetBuf(writeBufMutated)
+	if err := writer.Write(); err != nil {
+		t.Fatalf("second Write failed: %v", err)
+	}
+
+	if hex.EncodeToString(writeBufMutated) != hex.EncodeToString(expectedBytesMutated) {
+		t.Fatalf("mismatch after in-place mutation: got %x, expected %x", writeBufMutated, expectedBytesMutated)
 	}
 }
 
 func TestDependencyDescriptorWriterDifferential(t *testing.T) {
-	// hex bytes from traffic capture
 	hexes := []string{
 		"c1017280081485214eafffaaaa863cf0430c10c302afc0aaa0063c00430010c002a000a80006000040001d954926e082b04a0941b820ac1282503157f974000ca864330e222222eca8655304224230eca877530077004200ef008601df010d",
 		"86017340fc",
@@ -207,22 +285,20 @@ func TestDependencyDescriptorWriterDifferential(t *testing.T) {
 			d.Structure = d.Descriptor.AttachedStructure
 		}
 
-		// Now, marshal it back using active chains
 		activeChains := ^uint32(0)
 
-		// 1. Authoritative (non-cached) writing:
+		// Authoritative
 		authoritativeBytes, err := d.MarshalWithActiveChains(activeChains)
 		if err != nil {
 			t.Fatalf("[%d] MarshalWithActiveChains failed: %v", i, err)
 		}
 
-		// 2. Cached writing (testing writer reuse and ResetBuf):
+		// Cached
 		writer, err := NewDependencyDescriptorWriter(nil, d.Structure, activeChains, d.Descriptor)
 		if err != nil {
 			t.Fatalf("[%d] NewDependencyDescriptorWriter failed: %v", i, err)
 		}
 
-		// First write
 		sizeBits := writer.ValueSizeBits()
 		writeBuf := make([]byte, (sizeBits+7)/8)
 		writer.ResetBuf(writeBuf)
@@ -230,32 +306,8 @@ func TestDependencyDescriptorWriterDifferential(t *testing.T) {
 			t.Fatalf("[%d] first Write failed: %v", i, err)
 		}
 
-		// Verify first write matches authoritative
 		if hex.EncodeToString(writeBuf) != hex.EncodeToString(authoritativeBytes) {
-			t.Errorf("[%d] mismatch on first write! got %x, expected %x", i, writeBuf, authoritativeBytes)
-		}
-
-		// Trigger some dummy mutations to verify correct cache invalidation
-		originalSpatialId := d.Descriptor.FrameDependencies.SpatialId
-		d.Descriptor.FrameDependencies.SpatialId = 99 // mutate
-
-		// ResetBuf and write - should trigger recalculation and fail with template-not-found error
-		writer.ResetBuf(make([]byte, 1024))
-		if err := writer.Write(); err == nil {
-			t.Errorf("[%d] expected error on mutated spatial ID, got nil", i)
-		}
-
-		// Restore original spatial ID
-		d.Descriptor.FrameDependencies.SpatialId = originalSpatialId
-
-		// ResetBuf and write again - should succeed and match authoritative again
-		writer.ResetBuf(writeBuf)
-		if err := writer.Write(); err != nil {
-			t.Fatalf("[%d] second Write failed: %v", i, err)
-		}
-
-		if hex.EncodeToString(writeBuf) != hex.EncodeToString(authoritativeBytes) {
-			t.Errorf("[%d] mismatch on cached write! got %x, expected %x", i, writeBuf, authoritativeBytes)
+			t.Errorf("[%d] mismatch: got %x, expected %x", i, writeBuf, authoritativeBytes)
 		}
 	}
 }
