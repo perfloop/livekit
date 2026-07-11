@@ -31,12 +31,20 @@ type TemplateMatch struct {
 }
 
 type DependencyDescriptorWriter struct {
-	descriptor    *DependencyDescriptor
-	structure     *FrameDependencyStructure
-	activeChains  uint32
-	writer        *BitStreamWriter
-	bestTemplate  TemplateMatch
-	stateHash     uint64
+	descriptor         *DependencyDescriptor
+	structure          *FrameDependencyStructure
+	activeChains       uint32
+	writer             *BitStreamWriter
+	bestTemplate       TemplateMatch
+	hasCache           bool
+	cachedSpatial      int16
+	cachedTemporal     int16
+	cachedActiveChains uint32
+	nilBits            uint8
+	fdiffsLen          uint8
+	dtisLen            uint8
+	cdiffsLen          uint8
+	ptrsHash           uintptr
 }
 
 func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (*DependencyDescriptorWriter, error) {
@@ -90,85 +98,105 @@ func (w *DependencyDescriptorWriter) Write() error {
 	return nil
 }
 
-func (w *DependencyDescriptorWriter) computeStateHash() uint64 {
-	var h uint64 = 14695981039346656037
-	const prime uint64 = 1099511628211
-
-	hashInt := func(val int) {
-		h ^= uint64(val)
-		h *= prime
-	}
-
-	hashInt(int(w.activeChains))
-	hashInt(int(uintptr(unsafe.Pointer(w.structure))))
-	hashInt(int(uintptr(unsafe.Pointer(w.descriptor))))
-
-	if w.structure != nil {
-		hashInt(w.structure.StructureId)
-		hashInt(w.structure.NumDecodeTargets)
-		hashInt(w.structure.NumChains)
-		hashInt(len(w.structure.Templates))
-
-		for _, p := range w.structure.DecodeTargetProtectedByChain {
-			hashInt(p)
-		}
-
-		for _, t := range w.structure.Templates {
-			if t != nil {
-				hashInt(t.SpatialId)
-				hashInt(t.TemporalId)
-				hashInt(len(t.DecodeTargetIndications))
-				for _, dti := range t.DecodeTargetIndications {
-					hashInt(int(dti))
-				}
-				hashInt(len(t.FrameDiffs))
-				for _, fd := range t.FrameDiffs {
-					hashInt(fd)
-				}
-				hashInt(len(t.ChainDiffs))
-				for _, cd := range t.ChainDiffs {
-					hashInt(cd)
-				}
-			} else {
-				hashInt(0)
-			}
-		}
-	}
-
-	if w.descriptor != nil {
-		fd := w.descriptor.FrameDependencies
-		hashInt(int(uintptr(unsafe.Pointer(fd))))
-		if fd != nil {
-			hashInt(fd.SpatialId)
-			hashInt(fd.TemporalId)
-
-			hashInt(len(fd.DecodeTargetIndications))
-			for _, dti := range fd.DecodeTargetIndications {
-				hashInt(int(dti))
-			}
-			hashInt(len(fd.FrameDiffs))
-			for _, fdiff := range fd.FrameDiffs {
-				hashInt(fdiff)
-			}
-			hashInt(len(fd.ChainDiffs))
-			for _, cdiff := range fd.ChainDiffs {
-				hashInt(cdiff)
-			}
-		}
-	}
-
-	return h
-}
-
 func (w *DependencyDescriptorWriter) isCacheValid() bool {
-	if w.stateHash == 0 {
+	if !w.hasCache {
 		return false
 	}
-	return w.computeStateHash() == w.stateHash
+	if w.activeChains != w.cachedActiveChains {
+		return false
+	}
+	fd := w.descriptor.FrameDependencies
+	if fd == nil {
+		return false
+	}
+	if int16(fd.SpatialId) != w.cachedSpatial || int16(fd.TemporalId) != w.cachedTemporal {
+		return false
+	}
+
+	// Compare nilness
+	var nilBits uint8
+	if fd.FrameDiffs == nil {
+		nilBits |= 1
+	}
+	if fd.DecodeTargetIndications == nil {
+		nilBits |= 2
+	}
+	if fd.ChainDiffs == nil {
+		nilBits |= 4
+	}
+	if nilBits != w.nilBits {
+		return false
+	}
+
+	// Compare lens
+	if len(fd.FrameDiffs) != int(w.fdiffsLen) ||
+		len(fd.DecodeTargetIndications) != int(w.dtisLen) ||
+		len(fd.ChainDiffs) != int(w.cdiffsLen) {
+		return false
+	}
+
+	// Compare backing array pointers hash
+	var ptrsHash uintptr
+	if len(fd.FrameDiffs) > 0 {
+		ptrsHash ^= uintptr(unsafe.Pointer(&fd.FrameDiffs[0]))
+	}
+	if len(fd.DecodeTargetIndications) > 0 {
+		ptrsHash ^= uintptr(unsafe.Pointer(&fd.DecodeTargetIndications[0]))
+	}
+	if len(fd.ChainDiffs) > 0 {
+		ptrsHash ^= uintptr(unsafe.Pointer(&fd.ChainDiffs[0]))
+	}
+	if ptrsHash != w.ptrsHash {
+		return false
+	}
+
+	return true
 }
 
 func (w *DependencyDescriptorWriter) updateCache() {
-	w.stateHash = w.computeStateHash()
+	w.cachedActiveChains = w.activeChains
+	fd := w.descriptor.FrameDependencies
+	if fd != nil {
+		w.cachedSpatial = int16(fd.SpatialId)
+		w.cachedTemporal = int16(fd.TemporalId)
+
+		var nilBits uint8
+		if fd.FrameDiffs == nil {
+			nilBits |= 1
+		}
+		if fd.DecodeTargetIndications == nil {
+			nilBits |= 2
+		}
+		if fd.ChainDiffs == nil {
+			nilBits |= 4
+		}
+		w.nilBits = nilBits
+
+		w.fdiffsLen = uint8(len(fd.FrameDiffs))
+		w.dtisLen = uint8(len(fd.DecodeTargetIndications))
+		w.cdiffsLen = uint8(len(fd.ChainDiffs))
+
+		var ptrsHash uintptr
+		if len(fd.FrameDiffs) > 0 {
+			ptrsHash ^= uintptr(unsafe.Pointer(&fd.FrameDiffs[0]))
+		}
+		if len(fd.DecodeTargetIndications) > 0 {
+			ptrsHash ^= uintptr(unsafe.Pointer(&fd.DecodeTargetIndications[0]))
+		}
+		if len(fd.ChainDiffs) > 0 {
+			ptrsHash ^= uintptr(unsafe.Pointer(&fd.ChainDiffs[0]))
+		}
+		w.ptrsHash = ptrsHash
+	} else {
+		w.cachedSpatial = 0
+		w.cachedTemporal = 0
+		w.nilBits = 1 | 2 | 4
+		w.fdiffsLen = 0
+		w.dtisLen = 0
+		w.cdiffsLen = 0
+		w.ptrsHash = 0
+	}
+	w.hasCache = true
 }
 
 func (w *DependencyDescriptorWriter) findBestTemplate() error {

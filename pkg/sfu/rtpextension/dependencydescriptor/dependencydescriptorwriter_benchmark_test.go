@@ -120,6 +120,59 @@ func TestDependencyDescriptorWriterLifecycle(t *testing.T) {
 	}
 }
 
+func TestDependencyDescriptorWriterNilToEmpty(t *testing.T) {
+	structure, desc, err := getValidStructureAndDescriptor()
+	if err != nil {
+		t.Fatalf("failed to get valid structure and descriptor: %v", err)
+	}
+
+	// Let's copy/clone the descriptor to avoid modifying the original globally
+	descClone := *desc
+	fdClone := *desc.FrameDependencies
+
+	// Start with non-empty FrameDiffs
+	fdClone.FrameDiffs = []int{1}
+	descClone.FrameDependencies = &fdClone
+
+	buf := make([]byte, 1024)
+	writer, err := NewDependencyDescriptorWriter(buf, structure, ^uint32(0), &descClone)
+	if err != nil {
+		t.Fatalf("NewDependencyDescriptorWriter failed: %v", err)
+	}
+
+	// First Write
+	if err := writer.Write(); err != nil {
+		t.Fatalf("first Write failed: %v", err)
+	}
+
+	// Now mutate FrameDiffs to nil
+	fdClone.FrameDiffs = nil
+
+	// Reset buf and write - should invalidate cache because nilness changed!
+	writer.ResetBuf(make([]byte, 1024))
+	if err := writer.Write(); err != nil {
+		t.Fatalf("second Write failed after mutating FrameDiffs to nil: %v", err)
+	}
+
+	// Check that cache successfully updated
+	if (writer.nilBits & 1) == 0 {
+		t.Errorf("expected nilBits to record FrameDiffs as nil")
+	}
+
+	// Mutate FrameDiffs back to empty slice []int{}
+	fdClone.FrameDiffs = []int{}
+
+	// Reset buf and write - should invalidate cache again because nilness changed from nil to empty slice!
+	writer.ResetBuf(make([]byte, 1024))
+	if err := writer.Write(); err != nil {
+		t.Fatalf("third Write failed after mutating FrameDiffs to empty slice: %v", err)
+	}
+
+	if writer.nilBits&1 != 0 {
+		t.Errorf("expected nilBits to record FrameDiffs as non-nil")
+	}
+}
+
 func TestDependencyDescriptorWriterDifferential(t *testing.T) {
 	// hex bytes from traffic capture
 	hexes := []string{
