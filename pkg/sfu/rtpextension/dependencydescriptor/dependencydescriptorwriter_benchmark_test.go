@@ -154,11 +154,6 @@ func TestDependencyDescriptorWriterNilToEmpty(t *testing.T) {
 		t.Fatalf("second Write failed after mutating FrameDiffs to nil: %v", err)
 	}
 
-	// Check that cache successfully updated
-	if (writer.nilBits & 1) == 0 {
-		t.Errorf("expected nilBits to record FrameDiffs as nil")
-	}
-
 	// Mutate FrameDiffs back to empty slice []int{}
 	fdClone.FrameDiffs = []int{}
 
@@ -166,10 +161,6 @@ func TestDependencyDescriptorWriterNilToEmpty(t *testing.T) {
 	writer.ResetBuf(make([]byte, 1024))
 	if err := writer.Write(); err != nil {
 		t.Fatalf("third Write failed after mutating FrameDiffs to empty slice: %v", err)
-	}
-
-	if writer.nilBits&1 != 0 {
-		t.Errorf("expected nilBits to record FrameDiffs as non-nil")
 	}
 }
 

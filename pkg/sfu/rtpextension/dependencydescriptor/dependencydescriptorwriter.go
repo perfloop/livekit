@@ -17,7 +17,6 @@ package dependencydescriptor
 import (
 	"fmt"
 	"slices"
-	"unsafe"
 )
 
 type TemplateMatch struct {
@@ -31,20 +30,12 @@ type TemplateMatch struct {
 }
 
 type DependencyDescriptorWriter struct {
-	descriptor         *DependencyDescriptor
-	structure          *FrameDependencyStructure
-	activeChains       uint32
-	writer             *BitStreamWriter
-	bestTemplate       TemplateMatch
-	hasCache           bool
-	cachedSpatial      int16
-	cachedTemporal     int16
-	cachedActiveChains uint32
-	nilBits            uint8
-	fdiffsLen          uint8
-	dtisLen            uint8
-	cdiffsLen          uint8
-	ptrsHash           uintptr
+	descriptor      *DependencyDescriptor
+	structure       *FrameDependencyStructure
+	activeChains    uint32
+	writer          *BitStreamWriter
+	bestTemplate    TemplateMatch
+	templateMatched bool
 }
 
 func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (*DependencyDescriptorWriter, error) {
@@ -60,6 +51,7 @@ func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructu
 
 func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
 	w.writer = NewBitStreamWriter(buf)
+	w.templateMatched = false
 }
 
 func (w *DependencyDescriptorWriter) Write() error {
@@ -98,109 +90,58 @@ func (w *DependencyDescriptorWriter) Write() error {
 	return nil
 }
 
-func (w *DependencyDescriptorWriter) isCacheValid() bool {
-	if !w.hasCache {
+func (w *DependencyDescriptorWriter) isMatchValid() bool {
+	if !w.templateMatched {
 		return false
 	}
-	if w.activeChains != w.cachedActiveChains {
+	if w.structure == nil || len(w.structure.Templates) <= w.bestTemplate.TemplateIdx {
 		return false
 	}
+	t := w.structure.Templates[w.bestTemplate.TemplateIdx]
 	fd := w.descriptor.FrameDependencies
 	if fd == nil {
 		return false
 	}
-	if int16(fd.SpatialId) != w.cachedSpatial || int16(fd.TemporalId) != w.cachedTemporal {
+
+	if fd.SpatialId != t.SpatialId || fd.TemporalId != t.TemporalId {
 		return false
 	}
 
-	// Compare nilness
-	var nilBits uint8
-	if fd.FrameDiffs == nil {
-		nilBits |= 1
+	// Compare FrameDiffs
+	if (fd.FrameDiffs == nil) != (t.FrameDiffs == nil) {
+		return false
 	}
-	if fd.DecodeTargetIndications == nil {
-		nilBits |= 2
-	}
-	if fd.ChainDiffs == nil {
-		nilBits |= 4
-	}
-	if nilBits != w.nilBits {
+	if !slices.Equal(fd.FrameDiffs, t.FrameDiffs) {
 		return false
 	}
 
-	// Compare lens
-	if len(fd.FrameDiffs) != int(w.fdiffsLen) ||
-		len(fd.DecodeTargetIndications) != int(w.dtisLen) ||
-		len(fd.ChainDiffs) != int(w.cdiffsLen) {
+	// Compare DecodeTargetIndications
+	if (fd.DecodeTargetIndications == nil) != (t.DecodeTargetIndications == nil) {
+		return false
+	}
+	if !slices.Equal(fd.DecodeTargetIndications, t.DecodeTargetIndications) {
 		return false
 	}
 
-	// Compare backing array pointers hash
-	var ptrsHash uintptr
-	if len(fd.FrameDiffs) > 0 {
-		ptrsHash ^= uintptr(unsafe.Pointer(&fd.FrameDiffs[0]))
-	}
-	if len(fd.DecodeTargetIndications) > 0 {
-		ptrsHash ^= uintptr(unsafe.Pointer(&fd.DecodeTargetIndications[0]))
-	}
-	if len(fd.ChainDiffs) > 0 {
-		ptrsHash ^= uintptr(unsafe.Pointer(&fd.ChainDiffs[0]))
-	}
-	if ptrsHash != w.ptrsHash {
-		return false
+	// Compare ChainDiffs
+	for i := 0; i < w.structure.NumChains; i++ {
+		if w.activeChains&(1<<i) != 0 {
+			fdHas := len(fd.ChainDiffs) > i
+			tHas := len(t.ChainDiffs) > i
+			if fdHas != tHas {
+				return false
+			}
+			if fdHas && fd.ChainDiffs[i] != t.ChainDiffs[i] {
+				return false
+			}
+		}
 	}
 
 	return true
 }
 
-func (w *DependencyDescriptorWriter) updateCache() {
-	w.cachedActiveChains = w.activeChains
-	fd := w.descriptor.FrameDependencies
-	if fd != nil {
-		w.cachedSpatial = int16(fd.SpatialId)
-		w.cachedTemporal = int16(fd.TemporalId)
-
-		var nilBits uint8
-		if fd.FrameDiffs == nil {
-			nilBits |= 1
-		}
-		if fd.DecodeTargetIndications == nil {
-			nilBits |= 2
-		}
-		if fd.ChainDiffs == nil {
-			nilBits |= 4
-		}
-		w.nilBits = nilBits
-
-		w.fdiffsLen = uint8(len(fd.FrameDiffs))
-		w.dtisLen = uint8(len(fd.DecodeTargetIndications))
-		w.cdiffsLen = uint8(len(fd.ChainDiffs))
-
-		var ptrsHash uintptr
-		if len(fd.FrameDiffs) > 0 {
-			ptrsHash ^= uintptr(unsafe.Pointer(&fd.FrameDiffs[0]))
-		}
-		if len(fd.DecodeTargetIndications) > 0 {
-			ptrsHash ^= uintptr(unsafe.Pointer(&fd.DecodeTargetIndications[0]))
-		}
-		if len(fd.ChainDiffs) > 0 {
-			ptrsHash ^= uintptr(unsafe.Pointer(&fd.ChainDiffs[0]))
-		}
-		w.ptrsHash = ptrsHash
-	} else {
-		w.cachedSpatial = 0
-		w.cachedTemporal = 0
-		w.nilBits = 1 | 2 | 4
-		w.fdiffsLen = 0
-		w.dtisLen = 0
-		w.cdiffsLen = 0
-		w.ptrsHash = 0
-	}
-	w.hasCache = true
-}
-
 func (w *DependencyDescriptorWriter) findBestTemplate() error {
-	if w.isCacheValid() {
+	if w.isMatchValid() {
 		return nil
 	}
 
@@ -239,7 +180,7 @@ func (w *DependencyDescriptorWriter) findBestTemplate() error {
 		}
 	}
 
-	w.updateCache()
+	w.templateMatched = true
 	return nil
 }
 
