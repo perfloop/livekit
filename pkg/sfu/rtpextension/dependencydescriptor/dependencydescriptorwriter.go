@@ -29,12 +29,29 @@ type TemplateMatch struct {
 	ExtraSizeBits int
 }
 
+type dependencyDescriptorWriterCache struct {
+	structure                  *FrameDependencyStructure
+	activeChains               uint32
+	frameDeps                  *FrameDependencyTemplate
+	spatialId                  int
+	temporalId                 int
+	templatesLen               int
+	hasFrameDeps               bool
+	frameDiffsLen              int
+	frameDiffs                 [8]int
+	decodeTargetIndicationsLen int
+	decodeTargetIndications    [32]DecodeTargetIndication
+	chainDiffsLen              int
+	chainDiffs                 [8]int
+}
+
 type DependencyDescriptorWriter struct {
 	descriptor   *DependencyDescriptor
 	structure    *FrameDependencyStructure
 	activeChains uint32
 	writer       *BitStreamWriter
 	bestTemplate TemplateMatch
+	cache        dependencyDescriptorWriterCache
 }
 
 func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (*DependencyDescriptorWriter, error) {
@@ -88,7 +105,123 @@ func (w *DependencyDescriptorWriter) Write() error {
 	return nil
 }
 
+func (w *DependencyDescriptorWriter) isCacheValid() bool {
+	if w.structure != w.cache.structure {
+		return false
+	}
+	if w.activeChains != w.cache.activeChains {
+		return false
+	}
+	if w.structure == nil {
+		return w.cache.structure == nil
+	}
+	if len(w.structure.Templates) != w.cache.templatesLen {
+		return false
+	}
+	if w.descriptor == nil {
+		return !w.cache.hasFrameDeps
+	}
+	fd := w.descriptor.FrameDependencies
+	if fd == nil {
+		return !w.cache.hasFrameDeps
+	}
+	if !w.cache.hasFrameDeps {
+		return false
+	}
+	if fd != w.cache.frameDeps {
+		return false
+	}
+	if fd.SpatialId != w.cache.spatialId || fd.TemporalId != w.cache.temporalId {
+		return false
+	}
+
+	// Compare FrameDiffs
+	if len(fd.FrameDiffs) != w.cache.frameDiffsLen {
+		return false
+	}
+	if w.cache.frameDiffsLen > len(w.cache.frameDiffs) {
+		return false // too large, not cached
+	}
+	for i := 0; i < w.cache.frameDiffsLen; i++ {
+		if fd.FrameDiffs[i] != w.cache.frameDiffs[i] {
+			return false
+		}
+	}
+
+	// Compare DecodeTargetIndications
+	if len(fd.DecodeTargetIndications) != w.cache.decodeTargetIndicationsLen {
+		return false
+	}
+	if w.cache.decodeTargetIndicationsLen > len(w.cache.decodeTargetIndications) {
+		return false // too large, not cached
+	}
+	for i := 0; i < w.cache.decodeTargetIndicationsLen; i++ {
+		if fd.DecodeTargetIndications[i] != w.cache.decodeTargetIndications[i] {
+			return false
+		}
+	}
+
+	// Compare ChainDiffs
+	if len(fd.ChainDiffs) != w.cache.chainDiffsLen {
+		return false
+	}
+	if w.cache.chainDiffsLen > len(w.cache.chainDiffs) {
+		return false // too large, not cached
+	}
+	for i := 0; i < w.cache.chainDiffsLen; i++ {
+		if fd.ChainDiffs[i] != w.cache.chainDiffs[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (w *DependencyDescriptorWriter) updateCache() {
+	w.cache.structure = w.structure
+	w.cache.activeChains = w.activeChains
+	if w.structure != nil {
+		w.cache.templatesLen = len(w.structure.Templates)
+	} else {
+		w.cache.templatesLen = 0
+	}
+	if w.descriptor != nil && w.descriptor.FrameDependencies != nil {
+		fd := w.descriptor.FrameDependencies
+		w.cache.hasFrameDeps = true
+		w.cache.frameDeps = fd
+		w.cache.spatialId = fd.SpatialId
+		w.cache.temporalId = fd.TemporalId
+
+		w.cache.frameDiffsLen = len(fd.FrameDiffs)
+		if w.cache.frameDiffsLen <= len(w.cache.frameDiffs) {
+			copy(w.cache.frameDiffs[:], fd.FrameDiffs)
+		}
+
+		w.cache.decodeTargetIndicationsLen = len(fd.DecodeTargetIndications)
+		if w.cache.decodeTargetIndicationsLen <= len(w.cache.decodeTargetIndications) {
+			copy(w.cache.decodeTargetIndications[:], fd.DecodeTargetIndications)
+		}
+
+		w.cache.chainDiffsLen = len(fd.ChainDiffs)
+		if w.cache.chainDiffsLen <= len(w.cache.chainDiffs) {
+			copy(w.cache.chainDiffs[:], fd.ChainDiffs)
+		}
+	} else {
+		w.cache.hasFrameDeps = false
+		w.cache.frameDeps = nil
+		w.cache.spatialId = 0
+		w.cache.temporalId = 0
+		w.cache.frameDiffsLen = 0
+		w.cache.decodeTargetIndicationsLen = 0
+		w.cache.chainDiffsLen = 0
+	}
+}
+
 func (w *DependencyDescriptorWriter) findBestTemplate() error {
+	if w.isCacheValid() {
+		return nil
+	}
+
 	// Find templates with same spatial and temporal layer of frame dependency.
 	var (
 		firstSameLayer                      *FrameDependencyTemplate
@@ -123,6 +256,8 @@ func (w *DependencyDescriptorWriter) findBestTemplate() error {
 			w.bestTemplate = match
 		}
 	}
+
+	w.updateCache()
 	return nil
 }
 
