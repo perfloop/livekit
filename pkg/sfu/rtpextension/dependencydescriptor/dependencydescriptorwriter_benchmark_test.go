@@ -120,6 +120,102 @@ func TestDependencyDescriptorWriterLifecycle(t *testing.T) {
 	}
 }
 
+func TestDependencyDescriptorWriterDifferential(t *testing.T) {
+	// hex bytes from traffic capture
+	hexes := []string{
+		"c1017280081485214eafffaaaa863cf0430c10c302afc0aaa0063c00430010c002a000a80006000040001d954926e082b04a0941b820ac1282503157f974000ca864330e222222eca8655304224230eca877530077004200ef008601df010d",
+		"86017340fc",
+		"46017340fc",
+		"c3017540fc",
+		"88017640fc",
+		"48017640fc",
+		"c2017840fc",
+		"c1017280081485214eafffaaaa863cf0430c10c302afc0aaa0063c00430010c002a000a80006000040001d954926e082b04a0941b820ac1282503157f974000ca864330e222222eca8655304224230eca877530077004200ef008601df010d",
+		"860173",
+		"460173",
+		"8b0174",
+		"0b0174",
+		"0b0174",
+		"c30175",
+	}
+
+	var structure *FrameDependencyStructure
+
+	for i, h := range hexes {
+		buf, err := hex.DecodeString(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var ddVal DependencyDescriptor
+		var d = DependencyDescriptorExtension{
+			Structure:  structure,
+			Descriptor: &ddVal,
+		}
+		if _, err := d.Unmarshal(buf); err != nil {
+			t.Fatal(err)
+		}
+		if ddVal.AttachedStructure != nil {
+			structure = ddVal.AttachedStructure
+		}
+
+		if d.Structure == nil && d.Descriptor.AttachedStructure != nil {
+			d.Structure = d.Descriptor.AttachedStructure
+		}
+
+		// Now, marshal it back using active chains
+		activeChains := ^uint32(0)
+
+		// 1. Authoritative (non-cached) writing:
+		authoritativeBytes, err := d.MarshalWithActiveChains(activeChains)
+		if err != nil {
+			t.Fatalf("[%d] MarshalWithActiveChains failed: %v", i, err)
+		}
+
+		// 2. Cached writing (testing writer reuse and ResetBuf):
+		writer, err := NewDependencyDescriptorWriter(nil, d.Structure, activeChains, d.Descriptor)
+		if err != nil {
+			t.Fatalf("[%d] NewDependencyDescriptorWriter failed: %v", i, err)
+		}
+
+		// First write
+		sizeBits := writer.ValueSizeBits()
+		writeBuf := make([]byte, (sizeBits+7)/8)
+		writer.ResetBuf(writeBuf)
+		if err := writer.Write(); err != nil {
+			t.Fatalf("[%d] first Write failed: %v", i, err)
+		}
+
+		// Verify first write matches authoritative
+		if hex.EncodeToString(writeBuf) != hex.EncodeToString(authoritativeBytes) {
+			t.Errorf("[%d] mismatch on first write! got %x, expected %x", i, writeBuf, authoritativeBytes)
+		}
+
+		// Trigger some dummy mutations to verify correct cache invalidation
+		originalSpatialId := d.Descriptor.FrameDependencies.SpatialId
+		d.Descriptor.FrameDependencies.SpatialId = 99 // mutate
+
+		// ResetBuf and write - should trigger recalculation and fail with template-not-found error
+		writer.ResetBuf(make([]byte, 1024))
+		if err := writer.Write(); err == nil {
+			t.Errorf("[%d] expected error on mutated spatial ID, got nil", i)
+		}
+
+		// Restore original spatial ID
+		d.Descriptor.FrameDependencies.SpatialId = originalSpatialId
+
+		// ResetBuf and write again - should succeed and match authoritative again
+		writer.ResetBuf(writeBuf)
+		if err := writer.Write(); err != nil {
+			t.Fatalf("[%d] second Write failed: %v", i, err)
+		}
+
+		if hex.EncodeToString(writeBuf) != hex.EncodeToString(authoritativeBytes) {
+			t.Errorf("[%d] mismatch on cached write! got %x, expected %x", i, writeBuf, authoritativeBytes)
+		}
+	}
+}
+
 func BenchmarkDependencyDescriptorWriterWrite(b *testing.B) {
 	structure, desc, err := getValidStructureAndDescriptor()
 	if err != nil {
