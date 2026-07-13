@@ -82,21 +82,24 @@ func TestFrameDependencyTemplateCloneFallsBackForLargerSlices(t *testing.T) {
 }
 
 func TestFrameDependencyTemplateCloneRetainsAppendedSlicesAcrossGC(t *testing.T) {
-	clone := frameDependencyTemplateWithSliceLengths(1, 1, 1).Clone()
+	clone := frameDependencyTemplateWithSliceLengths(inlineDecodeTargetIndications, inlineFrameDiffs, inlineChainDiffs).Clone()
+	wantDecodeTargetIndications := append(slices.Clone(clone.DecodeTargetIndications), DecodeTargetSwitch)
+	wantFrameDiffs := append(slices.Clone(clone.FrameDiffs), 17)
+	wantChainDiffs := append(slices.Clone(clone.ChainDiffs), 19)
 	clone.DecodeTargetIndications = append(clone.DecodeTargetIndications, DecodeTargetSwitch)
 	clone.FrameDiffs = append(clone.FrameDiffs, 17)
 	clone.ChainDiffs = append(clone.ChainDiffs, 19)
 
 	pressure := dependencyDescriptorCloneGCPressure()
 
-	if got, want := clone.DecodeTargetIndications, []DecodeTargetIndication{DecodeTargetRequired, DecodeTargetSwitch}; !slices.Equal(got, want) {
-		t.Fatalf("DecodeTargetIndications after GC = %v, want %v", got, want)
+	if got := clone.DecodeTargetIndications; !slices.Equal(got, wantDecodeTargetIndications) {
+		t.Fatalf("DecodeTargetIndications after GC = %v, want %v", got, wantDecodeTargetIndications)
 	}
-	if got, want := clone.FrameDiffs, []int{1, 17}; !slices.Equal(got, want) {
-		t.Fatalf("FrameDiffs after GC = %v, want %v", got, want)
+	if got := clone.FrameDiffs; !slices.Equal(got, wantFrameDiffs) {
+		t.Fatalf("FrameDiffs after GC = %v, want %v", got, wantFrameDiffs)
 	}
-	if got, want := clone.ChainDiffs, []int{1, 19}; !slices.Equal(got, want) {
-		t.Fatalf("ChainDiffs after GC = %v, want %v", got, want)
+	if got := clone.ChainDiffs; !slices.Equal(got, wantChainDiffs) {
+		t.Fatalf("ChainDiffs after GC = %v, want %v", got, wantChainDiffs)
 	}
 
 	runtime.KeepAlive(clone)

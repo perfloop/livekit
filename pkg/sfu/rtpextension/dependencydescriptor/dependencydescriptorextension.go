@@ -152,9 +152,9 @@ const (
 )
 
 // frameDependencyTemplateClone keeps the captured steady-state template shape in
-// one GC-scanned allocation. Larger templates retain the general deep-clone path.
-// Slice capacities are capped to their lengths below, preserving the caller's
-// append and ownership semantics.
+// one GC-scanned allocation. Other template shapes retain the general deep-clone
+// path so they do not pay for unused inline storage. Slice capacities are capped
+// to their lengths below, preserving the caller's append and ownership semantics.
 type frameDependencyTemplateClone struct {
 	FrameDependencyTemplate
 	decodeTargetIndications [inlineDecodeTargetIndications]DecodeTargetIndication
@@ -163,9 +163,9 @@ type frameDependencyTemplateClone struct {
 }
 
 func (t *FrameDependencyTemplate) Clone() *FrameDependencyTemplate {
-	if len(t.DecodeTargetIndications) <= inlineDecodeTargetIndications &&
-		len(t.FrameDiffs) <= inlineFrameDiffs &&
-		len(t.ChainDiffs) <= inlineChainDiffs {
+	if len(t.DecodeTargetIndications) == inlineDecodeTargetIndications &&
+		len(t.FrameDiffs) == inlineFrameDiffs &&
+		len(t.ChainDiffs) == inlineChainDiffs {
 		clone := &frameDependencyTemplateClone{}
 		clone.SpatialId = t.SpatialId
 		clone.TemporalId = t.TemporalId
