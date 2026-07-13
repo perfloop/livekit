@@ -356,10 +356,8 @@ func (r *DependencyDescriptorReader) readFrameDependencyDefinition() error {
 		return ErrDDReaderInvalidTemplateIndex
 	}
 
-	// Copy the template's scalar fields and slice headers. The shared slices stay
-	// read-only unless a custom field below replaces its own slice.
-	frameDependencies := *r.structure.Templates[templateIndex]
-	r.descriptor.FrameDependencies = &frameDependencies
+	// Copy all the fields from the matching template
+	r.descriptor.FrameDependencies = r.structure.Templates[templateIndex].Clone()
 
 	if r.customDtisFlag {
 		err := r.readFrameDtis()
@@ -403,7 +401,6 @@ func (r *DependencyDescriptorReader) readFrameDtis() error {
 		return ErrDDReaderNumDTIMismatch
 	}
 
-	r.descriptor.FrameDependencies.DecodeTargetIndications = make([]DecodeTargetIndication, r.structure.NumDecodeTargets)
 	for i := range r.descriptor.FrameDependencies.DecodeTargetIndications {
 		indication, err := r.buffer.ReadBits(2)
 		if err != nil {
@@ -415,7 +412,7 @@ func (r *DependencyDescriptorReader) readFrameDtis() error {
 }
 
 func (r *DependencyDescriptorReader) readFrameFdiffs() error {
-	r.descriptor.FrameDependencies.FrameDiffs = make([]int, 0, len(r.descriptor.FrameDependencies.FrameDiffs))
+	r.descriptor.FrameDependencies.FrameDiffs = r.descriptor.FrameDependencies.FrameDiffs[:0]
 	for {
 		nexFdiffSize, err := r.buffer.ReadBits(2)
 		if err != nil {
@@ -439,7 +436,6 @@ func (r *DependencyDescriptorReader) readFrameChains() error {
 		return ErrDDReaderNumChainDiffsMismatch
 	}
 
-	r.descriptor.FrameDependencies.ChainDiffs = make([]int, r.structure.NumChains)
 	for i := range r.descriptor.FrameDependencies.ChainDiffs {
 		chainDiff, err := r.buffer.ReadBits(8)
 		if err != nil {
