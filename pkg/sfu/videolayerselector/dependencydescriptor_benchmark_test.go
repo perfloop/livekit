@@ -145,15 +145,11 @@ func BenchmarkDependencyDescriptorSelector(b *testing.B) {
 			b.StopTimer()
 			b.Fatal("dependency descriptor selector did not return an extension")
 		}
-		lastByte := result.DependencyDescriptorExtension[len(result.DependencyDescriptorExtension)-1]
 		b.StopTimer()
 
 		if !bytes.Equal(fixture.expected, result.DependencyDescriptorExtension) {
 			b.Fatal("dependency descriptor selector changed the marshaled extension")
 		}
 		validateDependencyDescriptorSelectorExtension(b, fixture.structure, fixture.target, result.DependencyDescriptorExtension)
-		if lastByte == 0xff {
-			b.Log("unreachable benchmark sink")
-		}
 	}
 }
