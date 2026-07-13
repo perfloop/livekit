@@ -47,12 +47,12 @@ func (w *DependencyDescriptorWriter) reset(buf []byte, structure *FrameDependenc
 	w.descriptor = descriptor
 	w.structure = structure
 	w.activeChains = activeChains
-	w.writer.Reset(buf)
+	w.writer.reset(buf)
 	return w.findBestTemplate()
 }
 
 func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
-	w.writer.Reset(buf)
+	w.writer.reset(buf)
 }
 
 func (w *DependencyDescriptorWriter) Write() error {

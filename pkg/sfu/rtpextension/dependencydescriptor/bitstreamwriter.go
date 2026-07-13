@@ -29,7 +29,7 @@ func NewBitStreamWriter(buf []byte) *BitStreamWriter {
 	return &BitStreamWriter{buf: buf}
 }
 
-func (w *BitStreamWriter) Reset(buf []byte) {
+func (w *BitStreamWriter) reset(buf []byte) {
 	w.buf = buf
 	w.pos = 0
 	w.bitOffset = 0
