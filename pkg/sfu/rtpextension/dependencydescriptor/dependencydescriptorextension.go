@@ -47,7 +47,8 @@ func (d *DependencyDescriptorExtension) MarshalWithActiveChains(activeChains uin
 }
 
 func (w *DependencyDescriptorWriter) Marshal(structure *FrameDependencyStructure, activeChains uint32, descriptor DependencyDescriptor) ([]byte, error) {
-	if err := w.Reset(nil, structure, activeChains, descriptor); err != nil {
+	w.descriptorSnapshot = descriptor
+	if err := w.reset(nil, structure, activeChains, &w.descriptorSnapshot); err != nil {
 		return nil, err
 	}
 	buf := make([]byte, int(math.Ceil(float64(w.ValueSizeBits())/8)))

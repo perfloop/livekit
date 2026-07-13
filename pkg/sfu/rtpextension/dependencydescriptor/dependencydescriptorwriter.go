@@ -30,19 +30,20 @@ type TemplateMatch struct {
 }
 
 type DependencyDescriptorWriter struct {
-	descriptor   DependencyDescriptor
-	structure    *FrameDependencyStructure
-	activeChains uint32
-	writer       BitStreamWriter
-	bestTemplate TemplateMatch
+	descriptor         *DependencyDescriptor
+	descriptorSnapshot DependencyDescriptor
+	structure          *FrameDependencyStructure
+	activeChains       uint32
+	writer             BitStreamWriter
+	bestTemplate       TemplateMatch
 }
 
 func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (*DependencyDescriptorWriter, error) {
 	w := &DependencyDescriptorWriter{}
-	return w, w.Reset(buf, structure, activeChains, *descriptor)
+	return w, w.reset(buf, structure, activeChains, descriptor)
 }
 
-func (w *DependencyDescriptorWriter) Reset(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor DependencyDescriptor) error {
+func (w *DependencyDescriptorWriter) reset(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) error {
 	w.descriptor = descriptor
 	w.structure = structure
 	w.activeChains = activeChains
