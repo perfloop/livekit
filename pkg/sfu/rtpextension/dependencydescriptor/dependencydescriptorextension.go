@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"unsafe"
 )
 
 // DependencyDescriptorExtension is a extension payload format in
@@ -145,19 +146,35 @@ type FrameDependencyTemplate struct {
 	ChainDiffs              []int
 }
 
+const frameDependencyTemplateCloneStorageWords = int(
+	(unsafe.Sizeof(FrameDependencyTemplate{}) + unsafe.Sizeof(int(0)) - 1) / unsafe.Sizeof(int(0)),
+)
+
 func (t *FrameDependencyTemplate) Clone() *FrameDependencyTemplate {
-	t2 := &FrameDependencyTemplate{
-		SpatialId:  t.SpatialId,
-		TemporalId: t.TemporalId,
-	}
+	dtiLen := len(t.DecodeTargetIndications)
+	frameDiffsLen := len(t.FrameDiffs)
+	chainDiffsLen := len(t.ChainDiffs)
 
-	t2.DecodeTargetIndications = make([]DecodeTargetIndication, len(t.DecodeTargetIndications))
+	// Keep the template and its integer-backed slices in one allocation. The
+	// prefix is int-aligned storage for FrameDependencyTemplate; the trailing
+	// storage holds its int-sized slice elements. Each slice is capped at its own
+	// length so callers can still append or mutate an independently owned result
+	// without reaching an adjacent slice. The extra word gives empty slices a
+	// non-nil data pointer, matching make([]T, 0).
+	storage := make([]int, frameDependencyTemplateCloneStorageWords+dtiLen+frameDiffsLen+chainDiffsLen+1)
+	t2 := (*FrameDependencyTemplate)(unsafe.Pointer(&storage[0]))
+	t2.SpatialId = t.SpatialId
+	t2.TemporalId = t.TemporalId
+
+	offset := frameDependencyTemplateCloneStorageWords
+	t2.DecodeTargetIndications = unsafe.Slice((*DecodeTargetIndication)(unsafe.Pointer(&storage[offset])), dtiLen)
+	offset += dtiLen
+	t2.FrameDiffs = storage[offset : offset+frameDiffsLen : offset+frameDiffsLen]
+	offset += frameDiffsLen
+	t2.ChainDiffs = storage[offset : offset+chainDiffsLen : offset+chainDiffsLen]
+
 	copy(t2.DecodeTargetIndications, t.DecodeTargetIndications)
-
-	t2.FrameDiffs = make([]int, len(t.FrameDiffs))
 	copy(t2.FrameDiffs, t.FrameDiffs)
-
-	t2.ChainDiffs = make([]int, len(t.ChainDiffs))
 	copy(t2.ChainDiffs, t.ChainDiffs)
 
 	return t2

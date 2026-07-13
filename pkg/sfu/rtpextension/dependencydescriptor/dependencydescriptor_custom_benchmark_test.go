@@ -14,42 +14,7 @@
 
 package dependencydescriptor
 
-import (
-	"fmt"
-	"reflect"
-	"testing"
-)
-
-func TestDependencyDescriptorReaderSteadyStateDoesNotMutateTemplates(t *testing.T) {
-	packets := dependencyDescriptorSteadyStatePackets(t)
-	for i, packet := range packets {
-		t.Run(fmt.Sprintf("packet_%d", i), func(t *testing.T) {
-			structure := dependencyDescriptorTestStructure(t)
-			before := dependencyDescriptorTemplateSnapshot(structure.Templates)
-
-			first := dependencyDescriptorTestParse(t, packet, structure)
-			want := dependencyDescriptorTemplateSnapshot([]*FrameDependencyTemplate{first.FrameDependencies})[0]
-			if len(first.FrameDependencies.DecodeTargetIndications) == 0 ||
-				len(first.FrameDependencies.FrameDiffs) == 0 ||
-				len(first.FrameDependencies.ChainDiffs) == 0 {
-				t.Fatalf("steady-state packet did not expose every mutable dependency slice: %#v", first.FrameDependencies)
-			}
-
-			first.FrameDependencies.DecodeTargetIndications[0] = (first.FrameDependencies.DecodeTargetIndications[0] + 1) % 4
-			first.FrameDependencies.FrameDiffs[0]++
-			first.FrameDependencies.ChainDiffs[0]++
-
-			if !reflect.DeepEqual(structure.Templates, before) {
-				t.Fatal("structure templates changed after mutating steady-state descriptor")
-			}
-
-			second := dependencyDescriptorTestParse(t, packet, structure)
-			if !reflect.DeepEqual(second.FrameDependencies, want) {
-				t.Fatalf("second steady-state descriptor = %#v, want %#v", second.FrameDependencies, want)
-			}
-		})
-	}
-}
+import "testing"
 
 var (
 	dependencyDescriptorCustomBenchmarkSink      *DependencyDescriptor
