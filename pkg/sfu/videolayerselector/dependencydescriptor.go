@@ -45,6 +45,7 @@ type DependencyDescriptor struct {
 	decodeTargetsLock sync.RWMutex
 	decodeTargets     []*DecodeTarget
 	fnWrapper         FrameNumberWrapper
+	ddWriter          dede.DependencyDescriptorWriter
 
 	restartGeneration int
 }
@@ -314,32 +315,16 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.IsRelevant = true
 	}
 
-	ddExtension := &dede.DependencyDescriptorExtension{
-		Descriptor: dd,
-		Structure:  d.structure,
-	}
-
+	ddToMarshal := *dd
 	unWrapFn := uint16(d.fnWrapper.UpdateAndGet(extFrameNum, ddwdt.StructureUpdated))
-	var ddClone *dede.DependencyDescriptor
 	if unWrapFn != dd.FrameNumber {
-		clone := *dd
-		ddClone = &clone
-		ddClone.FrameNumber = unWrapFn
-		ddExtension.Descriptor = ddClone
+		ddToMarshal.FrameNumber = unWrapFn
 	}
 
-	if dd.AttachedStructure == nil {
-		if d.activeDecodeTargetsBitmask != nil {
-			if ddClone == nil {
-				// clone and override activebitmask
-				// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
-				clone := *dd
-				ddClone = &clone
-				ddExtension.Descriptor = ddClone
-			}
-			ddClone.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
-			// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
-		}
+	if dd.AttachedStructure == nil && d.activeDecodeTargetsBitmask != nil {
+		// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
+		ddToMarshal.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
+		// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 	}
 
 	var ddMarshaled bool
@@ -355,7 +340,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 					"stack", string(debug.Stack()))
 			}
 		}()
-		bytes, err := ddExtension.Marshal()
+		bytes, err := d.ddWriter.Marshal(d.structure, ^uint32(0), ddToMarshal)
 		if err != nil {
 			d.logger.Warnw("error marshalling dependency descriptor extension", err)
 		} else {
