@@ -111,6 +111,13 @@ func dependencyDescriptorSteadyStatePackets(tb testing.TB) [][]byte {
 func dependencyDescriptorCustomOverridePacket(tb testing.TB, structure *FrameDependencyStructure) ([]byte, *DependencyDescriptor) {
 	tb.Helper()
 
+	packet, want, _ := dependencyDescriptorCustomOverridePacketWithTemplate(tb, structure)
+	return packet, want
+}
+
+func dependencyDescriptorCustomOverridePacketWithTemplate(tb testing.TB, structure *FrameDependencyStructure) ([]byte, *DependencyDescriptor, *FrameDependencyTemplate) {
+	tb.Helper()
+
 	want := &DependencyDescriptor{
 		FirstPacketInFrame: true,
 		LastPacketInFrame:  true,
@@ -147,7 +154,7 @@ func dependencyDescriptorCustomOverridePacket(tb testing.TB, structure *FrameDep
 	if err := writer.Write(); err != nil {
 		tb.Fatalf("write custom-override packet: %v", err)
 	}
-	return packet, want
+	return packet, want, structure.Templates[writer.bestTemplate.TemplateIdx]
 }
 
 func dependencyDescriptorTestParse(tb testing.TB, packet []byte, structure *FrameDependencyStructure) *DependencyDescriptor {
