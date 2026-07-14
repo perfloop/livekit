@@ -327,7 +327,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	if dd.AttachedStructure == nil && d.activeDecodeTargetsBitmask != nil {
 		// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
 		d.ddToMarshal.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
-		// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 	}
 
 	var ddMarshaled bool
