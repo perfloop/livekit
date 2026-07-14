@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
 )
 
 // DependencyDescriptorExtension is a extension payload format in
@@ -36,7 +37,8 @@ type DependencyDescriptorExtension struct {
 	Descriptor *DependencyDescriptor
 	Structure  *FrameDependencyStructure
 
-	writer DependencyDescriptorWriter
+	marshalMu sync.Mutex
+	writer    DependencyDescriptorWriter
 }
 
 func (d *DependencyDescriptorExtension) Marshal() ([]byte, error) {
@@ -44,6 +46,9 @@ func (d *DependencyDescriptorExtension) Marshal() ([]byte, error) {
 }
 
 func (d *DependencyDescriptorExtension) MarshalWithActiveChains(activeChains uint32) ([]byte, error) {
+	d.marshalMu.Lock()
+	defer d.marshalMu.Unlock()
+
 	if err := d.writer.reset(nil, d.Structure, activeChains, d.Descriptor); err != nil {
 		return nil, err
 	}
