@@ -366,6 +366,13 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 }
 
 func (d *DependencyDescriptor) marshalDependencyDescriptor() ([]byte, error) {
+	defer func() {
+		d.ddToMarshal = dede.DependencyDescriptor{}
+		if d.ddWriter != nil {
+			d.ddWriter.ResetBuf(nil)
+		}
+	}()
+
 	if d.ddWriter == nil || d.ddWriterStructure != d.structure {
 		writer, err := dede.NewDependencyDescriptorWriter(nil, d.structure, ^uint32(0), &d.ddToMarshal)
 		if err != nil {
@@ -377,7 +384,6 @@ func (d *DependencyDescriptor) marshalDependencyDescriptor() ([]byte, error) {
 
 	buf := make([]byte, int(math.Ceil(float64(d.ddWriter.ValueSizeBits())/8)))
 	d.ddWriter.ResetBuf(buf)
-	defer d.ddWriter.ResetBuf(nil)
 	if err := d.ddWriter.Write(); err != nil {
 		return nil, err
 	}
@@ -439,6 +445,10 @@ func (d *DependencyDescriptor) updateActiveDecodeTargets(activeDecodeTargetsBitm
 
 func (d *DependencyDescriptor) invalidateKeyFrame() {
 	d.keyFrameValid = false
+	d.structure = nil
+	d.ddWriter = nil
+	d.ddWriterStructure = nil
+	d.ddToMarshal = dede.DependencyDescriptor{}
 	d.chains = d.chains[:0]
 	d.decodeTargetsLock.Lock()
 	d.decodeTargets = d.decodeTargets[:0]
