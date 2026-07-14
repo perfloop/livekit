@@ -45,7 +45,8 @@ type DependencyDescriptor struct {
 	decodeTargetsLock sync.RWMutex
 	decodeTargets     []*DecodeTarget
 	fnWrapper         FrameNumberWrapper
-	ddWriter          dede.DependencyDescriptorWriter
+	ddToMarshal       dede.DependencyDescriptor
+	ddExtension       dede.DependencyDescriptorExtension
 
 	restartGeneration int
 }
@@ -315,17 +316,20 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.IsRelevant = true
 	}
 
-	ddToMarshal := *dd
+	d.ddToMarshal = *dd
 	unWrapFn := uint16(d.fnWrapper.UpdateAndGet(extFrameNum, ddwdt.StructureUpdated))
 	if unWrapFn != dd.FrameNumber {
-		ddToMarshal.FrameNumber = unWrapFn
+		d.ddToMarshal.FrameNumber = unWrapFn
 	}
 
 	if dd.AttachedStructure == nil && d.activeDecodeTargetsBitmask != nil {
 		// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
-		ddToMarshal.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
+		d.ddToMarshal.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
 		// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 	}
+
+	d.ddExtension.Descriptor = &d.ddToMarshal
+	d.ddExtension.Structure = d.structure
 
 	var ddMarshaled bool
 	func() {
@@ -340,7 +344,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 					"stack", string(debug.Stack()))
 			}
 		}()
-		bytes, err := d.ddWriter.Marshal(d.structure, ^uint32(0), ddToMarshal)
+		bytes, err := d.ddExtension.Marshal()
 		if err != nil {
 			d.logger.Warnw("error marshalling dependency descriptor extension", err)
 		} else {

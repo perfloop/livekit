@@ -47,6 +47,7 @@ func TestDependencyDescriptorMarshalRoundTrip(t *testing.T) {
 	payload, err := extension.Marshal()
 	require.NoError(t, err)
 	require.NotEmpty(t, payload)
+	payloadSnapshot := append([]byte(nil), payload...)
 
 	var decoded DependencyDescriptor
 	reader := DependencyDescriptorExtension{
@@ -61,4 +62,19 @@ func TestDependencyDescriptorMarshalRoundTrip(t *testing.T) {
 	require.Equal(t, descriptor.FrameDependencies, decoded.FrameDependencies)
 	require.NotNil(t, decoded.ActiveDecodeTargetsBitmask)
 	require.Equal(t, activeDecodeTargets, *decoded.ActiveDecodeTargetsBitmask)
+
+	descriptor.FrameNumber++
+	secondPayload, err := extension.Marshal()
+	require.NoError(t, err)
+	require.False(t, &payload[0] == &secondPayload[0])
+	require.Equal(t, payloadSnapshot, payload)
+
+	decoded = DependencyDescriptor{}
+	reader = DependencyDescriptorExtension{
+		Descriptor: &decoded,
+		Structure:  structure,
+	}
+	_, err = reader.Unmarshal(secondPayload)
+	require.NoError(t, err)
+	require.Equal(t, descriptor.FrameNumber, decoded.FrameNumber)
 }

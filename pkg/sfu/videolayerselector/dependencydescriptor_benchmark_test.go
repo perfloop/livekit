@@ -27,7 +27,7 @@ import (
 )
 
 type dependencyDescriptorSelectorFixture struct {
-	setup     []*buffer.ExtPacket
+	selector  *DependencyDescriptor
 	target    *buffer.ExtPacket
 	structure *dd.FrameDependencyStructure
 	expected  []byte
@@ -53,11 +53,11 @@ func newDependencyDescriptorSelectorFixture(tb testing.TB, startFrameNumber uint
 		tb.Fatal("dependency descriptor selector did not select the key frame")
 	}
 
-	for index, frame := range frames[1:] {
+	for _, frame := range frames[1:] {
 		result := selector.Select(frame, 0)
 		if result.IsSelected {
 			return dependencyDescriptorSelectorFixture{
-				setup:     frames[:index+1],
+				selector:  selector,
 				target:    frame,
 				structure: frames[0].DependencyDescriptor.Descriptor.AttachedStructure,
 				expected:  bytes.Clone(result.DependencyDescriptorExtension),
@@ -112,7 +112,7 @@ func TestDependencyDescriptorOutputIsolation(t *testing.T) {
 			continue
 		}
 
-		require.NotEqual(t, &first[0], &result.DependencyDescriptorExtension[0])
+		require.False(t, &first[0] == &result.DependencyDescriptorExtension[0])
 		require.Equal(t, firstSnapshot, first)
 		return
 	}
@@ -129,27 +129,22 @@ func BenchmarkDependencyDescriptorSelector(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		fixture := &fixtures[i%len(fixtures)]
-
-		b.StopTimer()
-		selector := newDependencyDescriptorSelector(b)
-		for _, frame := range fixture.setup {
-			selector.Select(frame, 0)
-		}
-		b.StartTimer()
-
-		result := selector.Select(fixture.target, 0)
-		if !result.IsSelected || len(result.DependencyDescriptorExtension) == 0 {
-			b.StopTimer()
-			b.Fatal("dependency descriptor selector did not return an extension")
-		}
-		b.StopTimer()
-
-		if !bytes.Equal(fixture.expected, result.DependencyDescriptorExtension) {
-			b.Fatal("dependency descriptor selector changed the marshaled extension")
-		}
-		validateDependencyDescriptorSelectorExtension(b, fixture.structure, fixture.target, result.DependencyDescriptorExtension)
+	var (
+		fixture *dependencyDescriptorSelectorFixture
+		result  VideoLayerSelectorResult
+		index   int
+	)
+	for b.Loop() {
+		fixture = &fixtures[index%len(fixtures)]
+		index++
+		result = fixture.selector.Select(fixture.target, 0)
 	}
+
+	if !result.IsSelected || len(result.DependencyDescriptorExtension) == 0 {
+		b.Fatal("dependency descriptor selector did not return an extension")
+	}
+	if !bytes.Equal(fixture.expected, result.DependencyDescriptorExtension) {
+		b.Fatal("dependency descriptor selector changed the marshaled extension")
+	}
+	validateDependencyDescriptorSelectorExtension(b, fixture.structure, fixture.target, result.DependencyDescriptorExtension)
 }
