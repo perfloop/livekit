@@ -12,46 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dependencydescriptor
+package dependencydescriptor_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 )
 
-func TestDependencyDescriptorWriterTracksDescriptorMutation(t *testing.T) {
-	structure := &FrameDependencyStructure{
+func TestDependencyDescriptorWriterTracksPostConstructionDescriptorMutation(t *testing.T) {
+	structure := &dd.FrameDependencyStructure{
 		NumDecodeTargets: 1,
-		Templates: []*FrameDependencyTemplate{
+		Templates: []*dd.FrameDependencyTemplate{
 			{
-				DecodeTargetIndications: []DecodeTargetIndication{DecodeTargetRequired},
+				DecodeTargetIndications: []dd.DecodeTargetIndication{dd.DecodeTargetRequired},
 				FrameDiffs:              []int{},
 				ChainDiffs:              []int{},
 			},
 		},
 	}
-	descriptor := DependencyDescriptor{
+	descriptor := dd.DependencyDescriptor{
 		FrameNumber:       1,
 		FrameDependencies: structure.Templates[0].Clone(),
 	}
-	writer, err := NewDependencyDescriptorWriter(nil, structure, ^uint32(0), &descriptor)
+	buf := make([]byte, 8)
+	writer, err := dd.NewDependencyDescriptorWriter(buf, structure, ^uint32(0), &descriptor)
 	require.NoError(t, err)
 
 	activeDecodeTargets := uint32(1)
 	descriptor.FrameNumber = 2
 	descriptor.ActiveDecodeTargetsBitmask = &activeDecodeTargets
-	writer.ResetBuf(make([]byte, (writer.ValueSizeBits()+7)/8))
+	descriptor.FrameDependencies.FrameDiffs = []int{1}
+	writer.ResetBuf(buf)
 	require.NoError(t, writer.Write())
 
-	var decoded DependencyDescriptor
-	reader := DependencyDescriptorExtension{
+	var decoded dd.DependencyDescriptor
+	reader := dd.DependencyDescriptorExtension{
 		Descriptor: &decoded,
 		Structure:  structure,
 	}
-	_, err = reader.Unmarshal(writer.writer.buf)
+	_, err = reader.Unmarshal(buf)
 	require.NoError(t, err)
 	require.Equal(t, descriptor.FrameNumber, decoded.FrameNumber)
 	require.NotNil(t, decoded.ActiveDecodeTargetsBitmask)
 	require.Equal(t, activeDecodeTargets, *decoded.ActiveDecodeTargetsBitmask)
+	require.Equal(t, []int{1}, decoded.FrameDependencies.FrameDiffs)
 }
