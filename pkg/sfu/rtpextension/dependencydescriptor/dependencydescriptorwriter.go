@@ -30,11 +30,12 @@ type TemplateMatch struct {
 }
 
 type DependencyDescriptorWriter struct {
-	descriptor   *DependencyDescriptor
-	structure    *FrameDependencyStructure
-	activeChains uint32
-	writer       *BitStreamWriter
-	bestTemplate TemplateMatch
+	descriptor    *DependencyDescriptor
+	structure     *FrameDependencyStructure
+	activeChains  uint32
+	writer        *BitStreamWriter
+	bestTemplate  TemplateMatch
+	templateFresh bool
 }
 
 func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (*DependencyDescriptorWriter, error) {
@@ -45,17 +46,25 @@ func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructu
 		activeChains: activeChains,
 		writer:       writer,
 	}
-	return w, w.findBestTemplate()
+	if err := w.findBestTemplate(); err != nil {
+		return w, err
+	}
+	w.templateFresh = true
+	return w, nil
 }
 
 func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
 	w.writer.reset(buf)
+	if buf == nil {
+		w.templateFresh = false
+	}
 }
 
 func (w *DependencyDescriptorWriter) Write() error {
 	if err := w.findBestTemplate(); err != nil {
 		return err
 	}
+	w.templateFresh = true
 
 	if err := w.writeMandatoryFields(); err != nil {
 		return err
@@ -446,8 +455,11 @@ func (w *DependencyDescriptorWriter) writeFrameChains() error {
 const mandatoryFieldSize = 1 + 1 + 6 + 16
 
 func (w *DependencyDescriptorWriter) ValueSizeBits() int {
-	if err := w.findBestTemplate(); err != nil {
-		return 0
+	if !w.templateFresh {
+		if err := w.findBestTemplate(); err != nil {
+			return 0
+		}
+		w.templateFresh = true
 	}
 
 	valueSizeBits := mandatoryFieldSize + w.bestTemplate.ExtraSizeBits
