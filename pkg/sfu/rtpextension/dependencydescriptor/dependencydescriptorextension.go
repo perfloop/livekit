@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"sync"
 )
 
 // DependencyDescriptorExtension is a extension payload format in
@@ -36,9 +35,6 @@ func formatBitmask(b *uint32) string {
 type DependencyDescriptorExtension struct {
 	Descriptor *DependencyDescriptor
 	Structure  *FrameDependencyStructure
-
-	marshalMu sync.Mutex
-	writer    DependencyDescriptorWriter
 }
 
 func (d *DependencyDescriptorExtension) Marshal() ([]byte, error) {
@@ -46,15 +42,13 @@ func (d *DependencyDescriptorExtension) Marshal() ([]byte, error) {
 }
 
 func (d *DependencyDescriptorExtension) MarshalWithActiveChains(activeChains uint32) ([]byte, error) {
-	d.marshalMu.Lock()
-	defer d.marshalMu.Unlock()
-
-	if err := d.writer.reset(nil, d.Structure, activeChains, d.Descriptor); err != nil {
+	writer, err := NewDependencyDescriptorWriter(nil, d.Structure, activeChains, d.Descriptor)
+	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, int(math.Ceil(float64(d.writer.ValueSizeBits())/8)))
-	d.writer.ResetBuf(buf)
-	if err := d.writer.Write(); err != nil {
+	buf := make([]byte, int(math.Ceil(float64(writer.ValueSizeBits())/8)))
+	writer.ResetBuf(buf)
+	if err = writer.Write(); err != nil {
 		return nil, err
 	}
 	return buf, nil

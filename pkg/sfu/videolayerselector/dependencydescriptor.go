@@ -16,6 +16,7 @@ package videolayerselector
 
 import (
 	"fmt"
+	"math"
 	"runtime/debug"
 	"sync"
 
@@ -46,7 +47,8 @@ type DependencyDescriptor struct {
 	decodeTargets     []*DecodeTarget
 	fnWrapper         FrameNumberWrapper
 	ddToMarshal       dede.DependencyDescriptor
-	ddExtension       dede.DependencyDescriptorExtension
+	ddWriter          *dede.DependencyDescriptorWriter
+	ddWriterStructure *dede.FrameDependencyStructure
 
 	restartGeneration int
 }
@@ -328,9 +330,6 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 	}
 
-	d.ddExtension.Descriptor = &d.ddToMarshal
-	d.ddExtension.Structure = d.structure
-
 	var ddMarshaled bool
 	func() {
 		defer func() {
@@ -344,7 +343,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 					"stack", string(debug.Stack()))
 			}
 		}()
-		bytes, err := d.ddExtension.Marshal()
+		bytes, err := d.marshalDependencyDescriptor()
 		if err != nil {
 			d.logger.Warnw("error marshalling dependency descriptor extension", err)
 		} else {
@@ -365,6 +364,25 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	result.RTPMarker = extPkt.Packet.Header.Marker || (dd.LastPacketInFrame && d.currentLayer.Spatial == int32(fd.SpatialId))
 	result.IsSelected = true
 	return
+}
+
+func (d *DependencyDescriptor) marshalDependencyDescriptor() ([]byte, error) {
+	if d.ddWriter == nil || d.ddWriterStructure != d.structure {
+		writer, err := dede.NewDependencyDescriptorWriter(nil, d.structure, ^uint32(0), &d.ddToMarshal)
+		if err != nil {
+			return nil, err
+		}
+		d.ddWriter = writer
+		d.ddWriterStructure = d.structure
+	}
+
+	buf := make([]byte, int(math.Ceil(float64(d.ddWriter.ValueSizeBits())/8)))
+	d.ddWriter.ResetBuf(buf)
+	defer d.ddWriter.ResetBuf(nil)
+	if err := d.ddWriter.Write(); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }
 
 func (d *DependencyDescriptor) Rollback() {
