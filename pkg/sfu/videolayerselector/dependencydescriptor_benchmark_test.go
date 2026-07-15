@@ -75,6 +75,50 @@ func TestDependencyDescriptorSelectorReturnsOwnedExtension(t *testing.T) {
 	}
 }
 
+func TestDependencyDescriptorSelectorRefreshesDescriptor(t *testing.T) {
+	selector := NewDependencyDescriptor(logger.GetLogger())
+	selector.SetTarget(buffer.VideoLayer{Spatial: 1, Temporal: 2})
+	selector.SetRequestSpatial(1)
+
+	frames := createDDFrames(buffer.VideoLayer{Spatial: 2, Temporal: 2}, 1)
+	if result := selector.Select(frames[0], 0); !result.IsSelected {
+		t.Fatal("initial dependency descriptor frame was not selected")
+	}
+
+	selected := 0
+	for _, frame := range frames[1:] {
+		result := selector.Select(frame, 0)
+		if !result.IsSelected {
+			continue
+		}
+
+		descriptor := frame.DependencyDescriptor.Descriptor
+		if descriptor.AttachedStructure == nil && selector.activeDecodeTargetsBitmask != nil {
+			clone := *descriptor
+			clone.ActiveDecodeTargetsBitmask = selector.activeDecodeTargetsBitmask
+			descriptor = &clone
+		}
+		expected, err := (&dd.DependencyDescriptorExtension{
+			Descriptor: descriptor,
+			Structure:  selector.structure,
+		}).Marshal()
+		if err != nil {
+			t.Fatalf("marshal expected dependency descriptor: %v", err)
+		}
+		if !slices.Equal(expected, result.DependencyDescriptorExtension) {
+			t.Fatalf("selected frame %d used a stale dependency descriptor", frame.DependencyDescriptor.ExtFrameNum)
+		}
+
+		selected++
+		if selected == 2 {
+			break
+		}
+	}
+	if selected != 2 {
+		t.Fatalf("got %d selected dependency descriptor frames, want 2", selected)
+	}
+}
+
 func TestDependencyDescriptorSelectorUsesUpdatedStructure(t *testing.T) {
 	selector, _ := prepareDependencyDescriptorSelector(t)
 
