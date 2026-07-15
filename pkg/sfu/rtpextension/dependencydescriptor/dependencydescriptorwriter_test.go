@@ -45,9 +45,13 @@ func TestDependencyDescriptorWriterValueSizeBitsAndWriteRefreshTemplate(t *testi
 		t.Run(test.name, func(t *testing.T) {
 			structure := dependencyDescriptorWriterTestStructure()
 			descriptor := dependencyDescriptorWriterTestDescriptor()
-			writer, err := NewDependencyDescriptorWriter(nil, structure, ^uint32(0), descriptor)
+			writerForSize, err := NewDependencyDescriptorWriter(nil, structure, ^uint32(0), descriptor)
 			if err != nil {
-				t.Fatalf("new writer: %v", err)
+				t.Fatalf("new writer for size: %v", err)
+			}
+			writerForWrite, err := NewDependencyDescriptorWriter(nil, structure, ^uint32(0), descriptor)
+			if err != nil {
+				t.Fatalf("new writer for write: %v", err)
 			}
 
 			test.mutate(descriptor)
@@ -59,12 +63,13 @@ func TestDependencyDescriptorWriterValueSizeBitsAndWriteRefreshTemplate(t *testi
 				t.Fatalf("stateless marshal: %v", err)
 			}
 
-			actual := make([]byte, (writer.ValueSizeBits()+7)/8)
-			if len(actual) != len(expected) {
-				t.Fatalf("value size after mutation = %d bytes, want %d", len(actual), len(expected))
+			if got := (writerForSize.ValueSizeBits() + 7) / 8; got != len(expected) {
+				t.Fatalf("value size after mutation = %d bytes, want %d", got, len(expected))
 			}
-			writer.ResetBuf(actual)
-			if err = writer.Write(); err != nil {
+
+			actual := make([]byte, len(expected))
+			writerForWrite.ResetBuf(actual)
+			if err = writerForWrite.Write(); err != nil {
 				t.Fatalf("write after mutation: %v", err)
 			}
 			if !bytes.Equal(actual, expected) {
