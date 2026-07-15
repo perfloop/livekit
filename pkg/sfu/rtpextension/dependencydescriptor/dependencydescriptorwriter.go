@@ -456,6 +456,10 @@ func (w *DependencyDescriptorWriter) writeFrameChains() error {
 const mandatoryFieldSize = 1 + 1 + 6 + 16
 
 func (w *DependencyDescriptorWriter) ValueSizeBits() int {
+	if err := w.prepareTemplate(); err != nil {
+		return 0
+	}
+
 	return w.valueSizeBits()
 }
 
