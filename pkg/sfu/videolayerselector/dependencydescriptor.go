@@ -373,12 +373,18 @@ func (d *DependencyDescriptor) marshalDependencyDescriptor() ([]byte, error) {
 		d.marshalWriter = writer
 	}
 
+	// Write refreshes the template. In steady state the cached size avoids a
+	// second search; retry if a changed descriptor or structure needs more space.
 	buf := make([]byte, (d.marshalWriter.ValueSizeBits()+7)/8)
 	d.marshalWriter.ResetBuf(buf)
 	if err := d.marshalWriter.Write(); err != nil {
-		return nil, err
+		buf = make([]byte, (d.marshalWriter.ValueSizeBits()+7)/8)
+		d.marshalWriter.ResetBuf(buf)
+		if err = d.marshalWriter.Write(); err != nil {
+			return nil, err
+		}
 	}
-	return buf, nil
+	return buf[:(d.marshalWriter.ValueSizeBits()+7)/8], nil
 }
 
 func (d *DependencyDescriptor) Rollback() {
