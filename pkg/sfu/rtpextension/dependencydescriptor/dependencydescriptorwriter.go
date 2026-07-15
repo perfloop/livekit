@@ -37,19 +37,44 @@ type DependencyDescriptorWriter struct {
 	bestTemplate TemplateMatch
 }
 
-func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (*DependencyDescriptorWriter, error) {
-	writer := NewBitStreamWriter(buf)
-	w := &DependencyDescriptorWriter{
-		descriptor:   descriptor,
-		structure:    structure,
-		activeChains: activeChains,
-		writer:       writer,
+func newDependencyDescriptorWriter() *DependencyDescriptorWriter {
+	return &DependencyDescriptorWriter{
+		writer: &BitStreamWriter{},
 	}
-	return w, w.findBestTemplate()
+}
+
+func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (*DependencyDescriptorWriter, error) {
+	w := newDependencyDescriptorWriter()
+	w.ResetBuf(buf)
+	return w, w.reset(structure, activeChains, descriptor)
+}
+
+func (w *DependencyDescriptorWriter) reset(structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) error {
+	w.descriptor = descriptor
+	w.structure = structure
+	w.activeChains = activeChains
+	return w.findBestTemplate()
+}
+
+func (w *DependencyDescriptorWriter) clear() {
+	w.descriptor = nil
+	w.structure = nil
+	w.activeChains = 0
+	w.bestTemplate = TemplateMatch{}
+	if w.writer != nil {
+		w.writer.buf = nil
+		w.writer.pos = 0
+		w.writer.bitOffset = 0
+	}
 }
 
 func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
-	w.writer = NewBitStreamWriter(buf)
+	if w.writer == nil {
+		w.writer = &BitStreamWriter{}
+	}
+	w.writer.buf = buf
+	w.writer.pos = 0
+	w.writer.bitOffset = 0
 }
 
 func (w *DependencyDescriptorWriter) Write() error {
