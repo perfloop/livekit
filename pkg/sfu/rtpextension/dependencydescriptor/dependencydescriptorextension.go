@@ -46,12 +46,7 @@ func (d *DependencyDescriptorExtension) MarshalWithActiveChains(activeChains uin
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, int(math.Ceil(float64(writer.valueSizeBits())/8)))
-	writer.ResetBuf(buf)
-	if err = writer.Write(); err != nil {
-		return nil, err
-	}
-	return buf, nil
+	return writer.Marshal()
 }
 
 func (d *DependencyDescriptorExtension) Unmarshal(buf []byte) (int, error) {

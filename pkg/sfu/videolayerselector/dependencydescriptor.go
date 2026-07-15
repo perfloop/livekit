@@ -373,12 +373,7 @@ func (d *DependencyDescriptor) marshalDependencyDescriptor() ([]byte, error) {
 		d.marshalWriter = writer
 	}
 
-	buf := make([]byte, (d.marshalWriter.ValueSizeBits()+7)/8)
-	d.marshalWriter.ResetBuf(buf)
-	if err := d.marshalWriter.Write(); err != nil {
-		return nil, err
-	}
-	return buf, nil
+	return d.marshalWriter.Marshal()
 }
 
 func (d *DependencyDescriptor) Rollback() {

@@ -45,7 +45,7 @@ func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructu
 		activeChains: activeChains,
 		writer:       writer,
 	}
-	return w, w.prepareTemplate()
+	return w, w.findBestTemplate()
 }
 
 func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
@@ -58,11 +58,27 @@ func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
 	w.writer.bitOffset = 0
 }
 
-func (w *DependencyDescriptorWriter) Write() error {
-	if err := w.prepareTemplate(); err != nil {
-		return err
+func (w *DependencyDescriptorWriter) Marshal() ([]byte, error) {
+	if err := w.findBestTemplate(); err != nil {
+		return nil, err
 	}
 
+	buf := make([]byte, (w.valueSizeBits()+7)/8)
+	w.ResetBuf(buf)
+	if err := w.write(); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func (w *DependencyDescriptorWriter) Write() error {
+	if err := w.findBestTemplate(); err != nil {
+		return err
+	}
+	return w.write()
+}
+
+func (w *DependencyDescriptorWriter) write() error {
 	if err := w.writeMandatoryFields(); err != nil {
 		return err
 	}
@@ -92,10 +108,6 @@ func (w *DependencyDescriptorWriter) Write() error {
 	}
 
 	return nil
-}
-
-func (w *DependencyDescriptorWriter) prepareTemplate() error {
-	return w.findBestTemplate()
 }
 
 func (w *DependencyDescriptorWriter) findBestTemplate() error {
@@ -456,7 +468,7 @@ func (w *DependencyDescriptorWriter) writeFrameChains() error {
 const mandatoryFieldSize = 1 + 1 + 6 + 16
 
 func (w *DependencyDescriptorWriter) ValueSizeBits() int {
-	if err := w.prepareTemplate(); err != nil {
+	if err := w.findBestTemplate(); err != nil {
 		return 0
 	}
 

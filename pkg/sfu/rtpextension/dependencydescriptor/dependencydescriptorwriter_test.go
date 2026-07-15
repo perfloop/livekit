@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-func TestDependencyDescriptorWriterWriteRefreshesTemplate(t *testing.T) {
+func TestDependencyDescriptorWriterValueSizeBitsAndWriteRefreshTemplate(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		mutate func(*DependencyDescriptor)
@@ -59,7 +59,10 @@ func TestDependencyDescriptorWriterWriteRefreshesTemplate(t *testing.T) {
 				t.Fatalf("stateless marshal: %v", err)
 			}
 
-			actual := make([]byte, len(expected))
+			actual := make([]byte, (writer.ValueSizeBits()+7)/8)
+			if len(actual) != len(expected) {
+				t.Fatalf("value size after mutation = %d bytes, want %d", len(actual), len(expected))
+			}
 			writer.ResetBuf(actual)
 			if err = writer.Write(); err != nil {
 				t.Fatalf("write after mutation: %v", err)
