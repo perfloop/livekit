@@ -16,6 +16,7 @@ package videolayerselector
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 
 	"github.com/pion/rtp"
@@ -126,6 +127,27 @@ func TestDependencyDescriptorSelectMarshalBehavior(t *testing.T) {
 	}
 	requireDependencyDescriptorDistinctBacking(t, first, refreshed)
 	requireDependencyDescriptorDistinctBacking(t, third, refreshed)
+}
+
+func TestDependencyDescriptorSelectMarshalMultiLayerBehavior(t *testing.T) {
+	selector := NewDependencyDescriptor(logger.GetLogger())
+	selector.SetTarget(buffer.VideoLayer{Spatial: 2, Temporal: 2})
+	selector.SetRequestSpatial(2)
+
+	firstStructureFrames := createDDFrames(buffer.VideoLayer{Spatial: 2, Temporal: 2}, 100)
+	firstStructureFrames[1].DependencyDescriptor.Descriptor.FrameDependencies.FrameDiffs = []int{1}
+	first := requireDependencyDescriptorSelectedExtensions(t, selector, firstStructureFrames)
+	firstSnapshot := bytes.Clone(first)
+
+	refreshedStructureFrames := createDDFrames(buffer.VideoLayer{Spatial: 2, Temporal: 1}, 1000)
+	refreshedStructureFrames[0].DependencyDescriptor.Descriptor.AttachedStructure.StructureId = 1
+	refreshedStructureFrames[1].DependencyDescriptor.Descriptor.FrameDependencies.FrameDiffs = []int{1}
+	last := requireDependencyDescriptorSelectedExtensions(t, selector, refreshedStructureFrames)
+
+	if !bytes.Equal(first, firstSnapshot) {
+		t.Fatal("structure refresh changed a previously returned extension")
+	}
+	requireDependencyDescriptorDistinctBacking(t, first, last)
 }
 
 func BenchmarkDependencyDescriptorSelectMarshal(b *testing.B) {
@@ -276,6 +298,85 @@ func dependencyDescriptorMarshalOracle(
 		t.Fatalf("marshal oracle: %v", err)
 	}
 	return expected
+}
+
+func requireDependencyDescriptorSelectedExtensions(t *testing.T, selector *DependencyDescriptor, frames []*buffer.ExtPacket) []byte {
+	t.Helper()
+
+	var (
+		structure            *dd.FrameDependencyStructure
+		first                []byte
+		selectedExtension    []byte
+		selectedCount        int
+		customFieldsSelected bool
+	)
+	for _, packet := range frames {
+		descriptor := packet.DependencyDescriptor.Descriptor
+		if descriptor.AttachedStructure != nil {
+			structure = descriptor.AttachedStructure
+			if structure.NumDecodeTargets < 2 || structure.NumChains < 2 || len(structure.Templates) < 2 {
+				t.Fatalf("frame %d did not attach a multi-target, multi-chain, multi-template structure", packet.DependencyDescriptor.ExtFrameNum)
+			}
+		}
+
+		result := selector.Select(packet, 0)
+		if !result.IsSelected {
+			if descriptor.AttachedStructure != nil {
+				t.Fatalf("frame %d did not select an attached structure update", packet.DependencyDescriptor.ExtFrameNum)
+			}
+			continue
+		}
+		if structure == nil {
+			t.Fatalf("frame %d selected without a dependency structure", packet.DependencyDescriptor.ExtFrameNum)
+		}
+		if len(result.DependencyDescriptorExtension) == 0 {
+			t.Fatalf("frame %d returned an empty extension", packet.DependencyDescriptor.ExtFrameNum)
+		}
+
+		activeDecodeTargets := buffer.GetActiveDecodeTargetBitmask(selector.GetCurrent(), packet.DependencyDescriptor.DecodeTargets)
+		expected := dependencyDescriptorMarshalOracle(t, descriptor, structure, activeDecodeTargets)
+		if !bytes.Equal(result.DependencyDescriptorExtension, expected) {
+			t.Fatalf("frame %d extension did not match the stateless marshal oracle", packet.DependencyDescriptor.ExtFrameNum)
+		}
+
+		if len(descriptor.FrameDependencies.FrameDiffs) != 0 {
+			template := dependencyDescriptorTemplateForLayer(t, structure, descriptor.FrameDependencies)
+			if slices.Equal(descriptor.FrameDependencies.DecodeTargetIndications, template.DecodeTargetIndications) ||
+				slices.Equal(descriptor.FrameDependencies.FrameDiffs, template.FrameDiffs) ||
+				slices.Equal(descriptor.FrameDependencies.ChainDiffs, template.ChainDiffs) {
+				t.Fatalf("frame %d did not exercise custom DTI, frame-diff, and chain-diff fields", packet.DependencyDescriptor.ExtFrameNum)
+			}
+			customFieldsSelected = true
+		}
+
+		if first == nil {
+			first = result.DependencyDescriptorExtension
+		} else {
+			requireDependencyDescriptorDistinctBacking(t, first, result.DependencyDescriptorExtension)
+		}
+		selectedExtension = result.DependencyDescriptorExtension
+		selectedCount++
+	}
+
+	if selectedCount < 2 {
+		t.Fatalf("expected at least two selected frames, got %d", selectedCount)
+	}
+	if !customFieldsSelected {
+		t.Fatal("no selected frame exercised custom DTI, frame-diff, and chain-diff fields")
+	}
+	return selectedExtension
+}
+
+func dependencyDescriptorTemplateForLayer(t *testing.T, structure *dd.FrameDependencyStructure, frame *dd.FrameDependencyTemplate) *dd.FrameDependencyTemplate {
+	t.Helper()
+
+	for _, template := range structure.Templates {
+		if template.SpatialId == frame.SpatialId && template.TemporalId == frame.TemporalId {
+			return template
+		}
+	}
+	t.Fatalf("no template found for spatial %d temporal %d", frame.SpatialId, frame.TemporalId)
+	return nil
 }
 
 func requireDependencyDescriptorDistinctBacking(t *testing.T, first, second []byte) {

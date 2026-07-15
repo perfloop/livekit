@@ -46,7 +46,7 @@ func (d *DependencyDescriptorExtension) MarshalWithActiveChains(activeChains uin
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, int(math.Ceil(float64(writer.ValueSizeBits())/8)))
+	buf := make([]byte, int(math.Ceil(float64(writer.valueSizeBits())/8)))
 	writer.ResetBuf(buf)
 	if err = writer.Write(); err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func (d *DependencyDescriptor) MarshalSizeWithActiveChains(activeChains uint32) 
 	if err != nil {
 		return 0, err
 	}
-	return int(math.Ceil(float64(writer.ValueSizeBits()) / 8)), nil
+	return int(math.Ceil(float64(writer.valueSizeBits()) / 8)), nil
 }
 
 func (d *DependencyDescriptor) String() string {
