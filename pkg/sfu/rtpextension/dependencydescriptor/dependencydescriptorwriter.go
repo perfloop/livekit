@@ -35,7 +35,6 @@ type DependencyDescriptorWriter struct {
 	activeChains uint32
 	writer       *BitStreamWriter
 	bestTemplate TemplateMatch
-	templateErr  error
 }
 
 func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (*DependencyDescriptorWriter, error) {
@@ -96,8 +95,7 @@ func (w *DependencyDescriptorWriter) Write() error {
 }
 
 func (w *DependencyDescriptorWriter) prepareTemplate() error {
-	w.templateErr = w.findBestTemplate()
-	return w.templateErr
+	return w.findBestTemplate()
 }
 
 func (w *DependencyDescriptorWriter) findBestTemplate() error {
