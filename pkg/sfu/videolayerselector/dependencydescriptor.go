@@ -47,6 +47,12 @@ type DependencyDescriptor struct {
 	fnWrapper         FrameNumberWrapper
 
 	restartGeneration int
+
+	// Select runs under the Forwarder lock. Keep marshal-only state with this
+	// selector so each selected packet can return its own output buffer.
+	marshalDescriptor dede.DependencyDescriptor
+	marshalStructure  dede.FrameDependencyStructure
+	marshalWriter     *dede.DependencyDescriptorWriter
 }
 
 func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
@@ -314,32 +320,11 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.IsRelevant = true
 	}
 
-	ddExtension := &dede.DependencyDescriptorExtension{
-		Descriptor: dd,
-		Structure:  d.structure,
-	}
-
-	unWrapFn := uint16(d.fnWrapper.UpdateAndGet(extFrameNum, ddwdt.StructureUpdated))
-	var ddClone *dede.DependencyDescriptor
-	if unWrapFn != dd.FrameNumber {
-		clone := *dd
-		ddClone = &clone
-		ddClone.FrameNumber = unWrapFn
-		ddExtension.Descriptor = ddClone
-	}
-
-	if dd.AttachedStructure == nil {
-		if d.activeDecodeTargetsBitmask != nil {
-			if ddClone == nil {
-				// clone and override activebitmask
-				// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
-				clone := *dd
-				ddClone = &clone
-				ddExtension.Descriptor = ddClone
-			}
-			ddClone.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
-			// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
-		}
+	d.marshalDescriptor = *dd
+	d.marshalDescriptor.FrameNumber = uint16(d.fnWrapper.UpdateAndGet(extFrameNum, ddwdt.StructureUpdated))
+	if dd.AttachedStructure == nil && d.activeDecodeTargetsBitmask != nil {
+		d.marshalDescriptor.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
+		// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
 	}
 
 	var ddMarshaled bool
@@ -355,7 +340,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 					"stack", string(debug.Stack()))
 			}
 		}()
-		bytes, err := ddExtension.Marshal()
+		bytes, err := d.marshalDependencyDescriptor()
 		if err != nil {
 			d.logger.Warnw("error marshalling dependency descriptor extension", err)
 		} else {
@@ -376,6 +361,24 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	result.RTPMarker = extPkt.Packet.Header.Marker || (dd.LastPacketInFrame && d.currentLayer.Spatial == int32(fd.SpatialId))
 	result.IsSelected = true
 	return
+}
+
+func (d *DependencyDescriptor) marshalDependencyDescriptor() ([]byte, error) {
+	d.marshalStructure = *d.structure
+	if d.marshalWriter == nil {
+		writer, err := dede.NewDependencyDescriptorWriter(nil, &d.marshalStructure, ^uint32(0), &d.marshalDescriptor)
+		if err != nil {
+			return nil, err
+		}
+		d.marshalWriter = writer
+	}
+
+	buf := make([]byte, (d.marshalWriter.ValueSizeBits()+7)/8)
+	d.marshalWriter.ResetBuf(buf)
+	if err := d.marshalWriter.Write(); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }
 
 func (d *DependencyDescriptor) Rollback() {
