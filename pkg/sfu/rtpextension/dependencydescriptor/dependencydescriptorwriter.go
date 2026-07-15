@@ -60,8 +60,8 @@ func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
 }
 
 func (w *DependencyDescriptorWriter) Write() error {
-	if w.templateErr != nil {
-		return w.templateErr
+	if err := w.prepareTemplate(); err != nil {
+		return err
 	}
 
 	if err := w.writeMandatoryFields(); err != nil {
