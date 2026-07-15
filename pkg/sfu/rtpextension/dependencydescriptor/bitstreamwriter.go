@@ -29,6 +29,12 @@ func NewBitStreamWriter(buf []byte) *BitStreamWriter {
 	return &BitStreamWriter{buf: buf}
 }
 
+func (w *BitStreamWriter) Reset(buf []byte) {
+	w.buf = buf
+	w.pos = 0
+	w.bitOffset = 0
+}
+
 func (w *BitStreamWriter) RemainingBits() int {
 	return (len(w.buf)-w.pos)*8 - w.bitOffset
 }

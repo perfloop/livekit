@@ -16,6 +16,7 @@ package dependencydescriptor
 
 import (
 	"fmt"
+	"math"
 	"slices"
 )
 
@@ -48,8 +49,22 @@ func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructu
 	return w, w.findBestTemplate()
 }
 
+func (w *DependencyDescriptorWriter) Reset(descriptor *DependencyDescriptor) error {
+	w.descriptor = descriptor
+	return w.findBestTemplate()
+}
+
 func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
-	w.writer = NewBitStreamWriter(buf)
+	w.writer.Reset(buf)
+}
+
+func (w *DependencyDescriptorWriter) Marshal() ([]byte, error) {
+	buf := make([]byte, int(math.Ceil(float64(w.ValueSizeBits())/8)))
+	w.ResetBuf(buf)
+	if err := w.Write(); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }
 
 func (w *DependencyDescriptorWriter) Write() error {

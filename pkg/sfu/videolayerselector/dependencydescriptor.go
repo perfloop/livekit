@@ -37,6 +37,7 @@ type DependencyDescriptor struct {
 	previousActiveDecodeTargetsBitmask *uint32
 	activeDecodeTargetsBitmask         *uint32
 	structure                          *dede.FrameDependencyStructure
+	ddWriter                           *dede.DependencyDescriptorWriter
 	extKeyFrameNum                     uint64
 	keyFrameValid                      bool
 
@@ -314,10 +315,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.IsRelevant = true
 	}
 
-	ddExtension := &dede.DependencyDescriptorExtension{
-		Descriptor: dd,
-		Structure:  d.structure,
-	}
+	descriptor := dd
 
 	unWrapFn := uint16(d.fnWrapper.UpdateAndGet(extFrameNum, ddwdt.StructureUpdated))
 	var ddClone *dede.DependencyDescriptor
@@ -325,7 +323,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		clone := *dd
 		ddClone = &clone
 		ddClone.FrameNumber = unWrapFn
-		ddExtension.Descriptor = ddClone
+		descriptor = ddClone
 	}
 
 	if dd.AttachedStructure == nil {
@@ -335,7 +333,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 				// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
 				clone := *dd
 				ddClone = &clone
-				ddExtension.Descriptor = ddClone
+				descriptor = ddClone
 			}
 			ddClone.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
 			// d.logger.Debugw("set active decode targets bitmask", "activeDecodeTargetsBitmask", d.activeDecodeTargetsBitmask)
@@ -355,13 +353,28 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 					"stack", string(debug.Stack()))
 			}
 		}()
-		bytes, err := ddExtension.Marshal()
+		var err error
+		if d.ddWriter == nil {
+			var writer *dede.DependencyDescriptorWriter
+			writer, err = dede.NewDependencyDescriptorWriter(nil, d.structure, ^uint32(0), descriptor)
+			if err == nil {
+				d.ddWriter = writer
+			}
+		} else {
+			err = d.ddWriter.Reset(descriptor)
+		}
 		if err != nil {
 			d.logger.Warnw("error marshalling dependency descriptor extension", err)
-		} else {
-			result.DependencyDescriptorExtension = bytes
-			ddMarshaled = true
+			return
 		}
+
+		bytes, err := d.ddWriter.Marshal()
+		if err != nil {
+			d.logger.Warnw("error marshalling dependency descriptor extension", err)
+			return
+		}
+		result.DependencyDescriptorExtension = bytes
+		ddMarshaled = true
 	}()
 
 	if !ddMarshaled {
@@ -386,6 +399,7 @@ func (d *DependencyDescriptor) Rollback() {
 
 func (d *DependencyDescriptor) updateDependencyStructure(structure *dede.FrameDependencyStructure, decodeTargets []buffer.DependencyDescriptorDecodeTarget, extFrameNum uint64) {
 	d.structure = structure
+	d.ddWriter = nil
 	d.extKeyFrameNum = extFrameNum
 	d.keyFrameValid = true
 
