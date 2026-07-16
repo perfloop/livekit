@@ -33,27 +33,27 @@ type DependencyDescriptorWriter struct {
 	descriptor   *DependencyDescriptor
 	structure    *FrameDependencyStructure
 	activeChains uint32
-	writer       *BitStreamWriter
+	writer       BitStreamWriter
 	bestTemplate TemplateMatch
 }
 
-func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (*DependencyDescriptorWriter, error) {
-	writer := NewBitStreamWriter(buf)
-	w := &DependencyDescriptorWriter{
+func newDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (w DependencyDescriptorWriter, err error) {
+	w = DependencyDescriptorWriter{
 		descriptor:   descriptor,
 		structure:    structure,
 		activeChains: activeChains,
-		writer:       writer,
+		writer:       BitStreamWriter{buf: buf},
 	}
-	return w, w.findBestTemplate()
+	err = w.findBestTemplate()
+	return
+}
+
+func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructure, activeChains uint32, descriptor *DependencyDescriptor) (*DependencyDescriptorWriter, error) {
+	writer, err := newDependencyDescriptorWriter(buf, structure, activeChains, descriptor)
+	return &writer, err
 }
 
 func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
-	if w.writer == nil {
-		w.writer = NewBitStreamWriter(buf)
-		return
-	}
-
 	w.writer.buf = buf
 	w.writer.pos = 0
 	w.writer.bitOffset = 0
