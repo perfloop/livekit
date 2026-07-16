@@ -35,6 +35,8 @@ func formatBitmask(b *uint32) string {
 type DependencyDescriptorExtension struct {
 	Descriptor *DependencyDescriptor
 	Structure  *FrameDependencyStructure
+
+	writer *DependencyDescriptorWriter
 }
 
 func (d *DependencyDescriptorExtension) Marshal() ([]byte, error) {
@@ -42,13 +44,26 @@ func (d *DependencyDescriptorExtension) Marshal() ([]byte, error) {
 }
 
 func (d *DependencyDescriptorExtension) MarshalWithActiveChains(activeChains uint32) ([]byte, error) {
-	writer, err := NewDependencyDescriptorWriter(nil, d.Structure, activeChains, d.Descriptor)
-	if err != nil {
-		return nil, err
+	writer := d.writer
+	if writer == nil {
+		var err error
+		writer, err = NewDependencyDescriptorWriter(nil, d.Structure, activeChains, d.Descriptor)
+		if err != nil {
+			return nil, err
+		}
+		d.writer = writer
+	} else {
+		writer.descriptor = d.Descriptor
+		writer.structure = d.Structure
+		writer.activeChains = activeChains
+		if err := writer.findBestTemplate(); err != nil {
+			return nil, err
+		}
 	}
+
 	buf := make([]byte, int(math.Ceil(float64(writer.ValueSizeBits())/8)))
 	writer.ResetBuf(buf)
-	if err = writer.Write(); err != nil {
+	if err := writer.Write(); err != nil {
 		return nil, err
 	}
 	return buf, nil

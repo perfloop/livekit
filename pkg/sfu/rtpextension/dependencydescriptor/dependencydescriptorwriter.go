@@ -49,7 +49,14 @@ func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructu
 }
 
 func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
-	w.writer = NewBitStreamWriter(buf)
+	if w.writer == nil {
+		w.writer = NewBitStreamWriter(buf)
+		return
+	}
+
+	w.writer.buf = buf
+	w.writer.pos = 0
+	w.writer.bitOffset = 0
 }
 
 func (w *DependencyDescriptorWriter) Write() error {

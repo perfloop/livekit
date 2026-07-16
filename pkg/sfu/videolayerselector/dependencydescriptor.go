@@ -37,6 +37,7 @@ type DependencyDescriptor struct {
 	previousActiveDecodeTargetsBitmask *uint32
 	activeDecodeTargetsBitmask         *uint32
 	structure                          *dede.FrameDependencyStructure
+	ddExtension                        dede.DependencyDescriptorExtension
 	extKeyFrameNum                     uint64
 	keyFrameValid                      bool
 
@@ -314,10 +315,9 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		result.IsRelevant = true
 	}
 
-	ddExtension := &dede.DependencyDescriptorExtension{
-		Descriptor: dd,
-		Structure:  d.structure,
-	}
+	d.ddExtension.Descriptor = dd
+	d.ddExtension.Structure = d.structure
+	ddExtension := &d.ddExtension
 
 	unWrapFn := uint16(d.fnWrapper.UpdateAndGet(extFrameNum, ddwdt.StructureUpdated))
 	var ddClone *dede.DependencyDescriptor
