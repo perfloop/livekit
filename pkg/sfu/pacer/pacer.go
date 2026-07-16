@@ -42,18 +42,20 @@ const (
 )
 
 type Packet struct {
-	Header             *rtp.Header
-	HeaderPool         *sync.Pool
-	HeaderSize         int
-	Payload            []byte
-	IsRTX              bool
-	ProbeClusterId     ccutils.ProbeClusterId
-	IsProbe            bool
-	AbsSendTimeExtID   uint8
-	TransportWideExtID uint8
-	WriteStream        webrtc.TrackLocalWriter
-	Pool               *sync.Pool
-	PoolEntity         *[]byte
+	Header              *rtp.Header
+	HeaderPool          *sync.Pool
+	HeaderSize          int
+	Payload             []byte
+	IsRTX               bool
+	ProbeClusterId      ccutils.ProbeClusterId
+	IsProbe             bool
+	AbsSendTimeExtID    uint8
+	TransportWideExtID  uint8
+	absSendTimeExtBuf   [3]byte
+	transportWideExtBuf [2]byte
+	WriteStream         webrtc.TrackLocalWriter
+	Pool                *sync.Pool
+	PoolEntity          *[]byte
 }
 
 type Pacer interface {

@@ -95,12 +95,12 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		absSendTimeExt := rtp.AbsSendTimeExtension{
 			Timestamp: uint64(mediatransportutil.ToNtpTime(sendingAt) >> 14),
 		}
-		absSendTimeBytes, err := absSendTimeExt.Marshal()
+		_, err := absSendTimeExt.MarshalTo(p.absSendTimeExtBuf[:])
 		if err != nil {
 			return err
 		}
 
-		if err = p.Header.SetExtension(p.AbsSendTimeExtID, absSendTimeBytes); err != nil {
+		if err = p.Header.SetExtension(p.AbsSendTimeExtID, p.absSendTimeExtBuf[:]); err != nil {
 			return err
 		}
 
@@ -119,12 +119,12 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		twccExt := rtp.TransportCCExtension{
 			TransportSequence: twccSN,
 		}
-		twccExtBytes, err := twccExt.Marshal()
+		_, err := twccExt.MarshalTo(p.transportWideExtBuf[:])
 		if err != nil {
 			return err
 		}
 
-		if err = p.Header.SetExtension(p.TransportWideExtID, twccExtBytes); err != nil {
+		if err = p.Header.SetExtension(p.TransportWideExtID, p.transportWideExtBuf[:]); err != nil {
 			return err
 		}
 
