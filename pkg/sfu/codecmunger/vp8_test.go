@@ -526,6 +526,18 @@ func TestUpdateAndGetRetainsPreviousHeader(t *testing.T) {
 
 	_, _, err = munger.UpdateAndGet(secondPacket, false, false, 0)
 	require.NoError(t, err)
+
+	thirdDescriptor := secondDescriptor
+	thirdDescriptor.PictureID++
+	thirdDescriptor.TL0PICIDX++
+	thirdDescriptor.KEYIDX++
+	params.SequenceNumber++
+	params.Timestamp += 3000
+	thirdPacket, err := testutils.GetTestExtPacketVP8(params, &thirdDescriptor)
+	require.NoError(t, err)
+
+	_, _, err = munger.UpdateAndGet(thirdPacket, false, false, 0)
+	require.NoError(t, err)
 	require.Equal(t, firstHeaderCopy, firstHeader)
 }
 

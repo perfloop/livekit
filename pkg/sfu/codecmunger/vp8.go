@@ -50,11 +50,6 @@ type VP8 struct {
 	missingPictureIds  *orderedmap.OrderedMap[int32, int32]
 	droppedPictureIds  *orderedmap.OrderedMap[int32, bool]
 	exemptedPictureIds *orderedmap.OrderedMap[int32, bool]
-
-	// Alternate buffers so a caller can retain the previous result while
-	// preparing the next packet.
-	marshaledBuf      [2][6]byte
-	marshaledBufIndex uint8
 }
 
 func NewVP8(logger logger.Logger) *VP8 {
@@ -195,7 +190,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 			IsKeyFrame: vp8.IsKeyFrame,
 			HeaderSize: vp8.HeaderSize + codec.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.M),
 		}
-		vp8HeaderBytes, err := v.marshal(vp8Packet)
+		vp8HeaderBytes, err := vp8Packet.Marshal()
 		if err != nil {
 			return 0, nil, err
 		}
@@ -302,22 +297,11 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 		IsKeyFrame: vp8.IsKeyFrame,
 		HeaderSize: vp8.HeaderSize + codec.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.M),
 	}
-	vp8HeaderBytes, err := v.marshal(vp8Packet)
+	vp8HeaderBytes, err := vp8Packet.Marshal()
 	if err != nil {
 		return 0, nil, err
 	}
 	return vp8.HeaderSize, vp8HeaderBytes, nil
-}
-
-func (v *VP8) marshal(vp8Packet codec.VP8) ([]byte, error) {
-	buf := v.marshaledBuf[v.marshaledBufIndex][:]
-	n, err := vp8Packet.MarshalTo(buf)
-	if err != nil {
-		return nil, err
-	}
-
-	v.marshaledBufIndex ^= 1
-	return buf[:n], nil
 }
 
 func (v *VP8) UpdateAndGetPadding(newPicture bool) ([]byte, error) {

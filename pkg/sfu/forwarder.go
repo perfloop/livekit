@@ -200,8 +200,7 @@ type TranslationParams struct {
 	rtp                TranslationParamsRTP
 	ddBytes            []byte
 	incomingHeaderSize int
-	codecBytes         [6]byte
-	numCodecBytes      uint8
+	codecBytes         []byte
 	marker             bool
 }
 
@@ -2212,7 +2211,7 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *Translati
 		return err
 	}
 	tp.incomingHeaderSize = inputSize
-	tp.numCodecBytes = uint8(copy(tp.codecBytes[:], codecBytes))
+	tp.codecBytes = codecBytes
 	return nil
 }
 

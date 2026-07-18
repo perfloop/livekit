@@ -46,11 +46,6 @@ func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 	return f
 }
 
-func codecBytesArray(codecBytes []byte) (result [6]byte) {
-	copy(result[:], codecBytes)
-	return
-}
-
 func TestForwarderMute(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 	require.False(t, f.IsMuted())
@@ -1600,8 +1595,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         codecBytesArray(marshalledVP8),
-		numCodecBytes:      uint8(len(marshalledVP8)),
+		codecBytes:         marshalledVP8,
 		marker:             true,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
@@ -1680,8 +1674,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         codecBytesArray(marshalledVP8),
-		numCodecBytes:      uint8(len(marshalledVP8)),
+		codecBytes:         marshalledVP8,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1735,8 +1728,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         codecBytesArray(marshalledVP8),
-		numCodecBytes:      uint8(len(marshalledVP8)),
+		codecBytes:         marshalledVP8,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1824,8 +1816,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         codecBytesArray(marshalledVP8),
-		numCodecBytes:      uint8(len(marshalledVP8)),
+		codecBytes:         marshalledVP8,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1924,52 +1915,12 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdf0,
 		},
 		incomingHeaderSize: 5,
-		codecBytes:         codecBytesArray(marshalledVP8),
-		numCodecBytes:      uint8(len(marshalledVP8)),
+		codecBytes:         marshalledVP8,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 1)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
 	require.Equal(t, f.lastSSRC, params.SSRC)
-
-	t.Run("seven bit VP8 header", func(t *testing.T) {
-		f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
-		f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
-
-		params := &testutils.TestExtPacketParams{
-			SequenceNumber: 100,
-			Timestamp:      90000,
-			SSRC:           0x12345678,
-			PayloadSize:    20,
-			Marker:         true,
-		}
-		vp8 := &codec.VP8{
-			FirstByte:  25,
-			I:          true,
-			PictureID:  45,
-			L:          true,
-			TL0PICIDX:  12,
-			T:          true,
-			TID:        0,
-			Y:          true,
-			K:          true,
-			KEYIDX:     30,
-			HeaderSize: 5,
-			IsKeyFrame: true,
-		}
-		extPkt, err := testutils.GetTestExtPacketVP8(params, vp8)
-		require.NoError(t, err)
-
-		actualTP, err := f.GetTranslationParams(extPkt, 0)
-		require.NoError(t, err)
-		require.False(t, actualTP.shouldDrop)
-		require.EqualValues(t, 5, actualTP.numCodecBytes)
-
-		expectedVP8 := *vp8
-		expected, err := expectedVP8.Marshal()
-		require.NoError(t, err)
-		require.Equal(t, expected, actualTP.codecBytes[:actualTP.numCodecBytes])
-	})
 }
 
 func TestForwarderGetSnTsForPadding(t *testing.T) {
