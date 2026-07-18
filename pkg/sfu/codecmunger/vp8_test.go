@@ -482,6 +482,53 @@ func TestUpdateAndGetPadding(t *testing.T) {
 	require.Equal(t, marshalledVP8, buf)
 }
 
+func TestUpdateAndGetRetainsPreviousHeader(t *testing.T) {
+	munger := newVP8()
+	params := &testutils.TestExtPacketParams{
+		Marker:         true,
+		IsKeyFrame:     true,
+		PayloadType:    96,
+		SequenceNumber: 1000,
+		Timestamp:      90000,
+		SSRC:           0x12345678,
+	}
+	firstDescriptor := &codec.VP8{
+		FirstByte:  0x10,
+		I:          true,
+		M:          true,
+		PictureID:  128,
+		L:          true,
+		TL0PICIDX:  0,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     0,
+		HeaderSize: 6,
+		IsKeyFrame: true,
+	}
+	firstPacket, err := testutils.GetTestExtPacketVP8(params, firstDescriptor)
+	require.NoError(t, err)
+
+	inputSize, firstHeader, err := munger.UpdateAndGet(firstPacket, false, false, 0)
+	require.NoError(t, err)
+	require.Equal(t, 6, inputSize)
+	firstHeaderCopy := append([]byte(nil), firstHeader...)
+
+	secondDescriptor := *firstDescriptor
+	secondDescriptor.PictureID++
+	secondDescriptor.TL0PICIDX++
+	secondDescriptor.KEYIDX++
+	params.SequenceNumber++
+	params.Timestamp += 3000
+	secondPacket, err := testutils.GetTestExtPacketVP8(params, &secondDescriptor)
+	require.NoError(t, err)
+
+	_, _, err = munger.UpdateAndGet(secondPacket, false, false, 0)
+	require.NoError(t, err)
+	require.Equal(t, firstHeaderCopy, firstHeader)
+}
+
 func TestVP8PictureIdWrapHandler(t *testing.T) {
 	v := &VP8PictureIdWrapHandler{}
 

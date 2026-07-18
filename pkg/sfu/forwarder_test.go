@@ -46,7 +46,7 @@ func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 	return f
 }
 
-func codecBytesArray(codecBytes []byte) (result [8]byte) {
+func codecBytesArray(codecBytes []byte) (result [6]byte) {
 	copy(result[:], codecBytes)
 	return
 }
