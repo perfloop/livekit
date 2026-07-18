@@ -1082,8 +1082,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 
 	poolEntity := PacketFactory.Get().(*[]byte)
 	payload := *poolEntity
-	copy(payload, tp.codecBytes)
-	n := copy(payload[len(tp.codecBytes):], extPkt.Packet.Payload[tp.incomingHeaderSize:])
+	codecBytes := tp.codecBytes[:tp.numCodecBytes]
+	copy(payload, codecBytes)
+	n := copy(payload[len(codecBytes):], extPkt.Packet.Payload[tp.incomingHeaderSize:])
 	if n != len(extPkt.Packet.Payload[tp.incomingHeaderSize:]) {
 		d.params.Logger.Errorw(
 			"payload overflow", errPayloadOverflow,
@@ -1093,7 +1094,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		PacketFactory.Put(poolEntity)
 		return 0
 	}
-	payload = payload[:len(tp.codecBytes)+n]
+	payload = payload[:len(codecBytes)+n]
 
 	if d.params.StripPacketTrailer {
 		if strip := packettrailer.StripTrailer(payload, tp.marker); strip > 0 {
@@ -1164,7 +1165,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 			tp.rtp.extTimestamp,
 			hdr.Marker,
 			int8(layer),
-			payload[:len(tp.codecBytes)],
+			payload[:len(codecBytes)],
 			tp.incomingHeaderSize,
 			tp.ddBytes,
 			actBytes,

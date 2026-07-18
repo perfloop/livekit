@@ -67,14 +67,14 @@ func TestForwarderGetTranslationParamsKeepsVP8Header(t *testing.T) {
 	first, err := f.GetTranslationParams(newVP8BenchmarkPacket(t, 1, 128, true), 0)
 	require.NoError(t, err)
 	require.False(t, first.shouldDrop)
-	firstHeader := append([]byte(nil), first.codecBytes...)
+	firstHeader := append([]byte(nil), first.codecBytes[:first.numCodecBytes]...)
 
 	second, err := f.GetTranslationParams(newVP8BenchmarkPacket(t, 2, 129, false), 0)
 	require.NoError(t, err)
 	require.False(t, second.shouldDrop)
 
-	require.Equal(t, firstHeader, first.codecBytes)
-	require.NotEqual(t, first.codecBytes, second.codecBytes)
+	require.Equal(t, firstHeader, first.codecBytes[:first.numCodecBytes])
+	require.NotEqual(t, first.codecBytes[:first.numCodecBytes], second.codecBytes[:second.numCodecBytes])
 }
 
 func BenchmarkVP8UpdateAndGet(b *testing.B) {

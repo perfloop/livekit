@@ -45,6 +45,10 @@ func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 	return f
 }
 
+func setCodecBytes(tp *TranslationParams, codecBytes []byte) {
+	tp.numCodecBytes = uint8(copy(tp.codecBytes[:], codecBytes))
+}
+
 func TestForwarderMute(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 	require.False(t, f.IsMuted())
@@ -1594,9 +1598,9 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
 		marker:             true,
 	}
+	setCodecBytes(&expectedTP, marshalledVP8)
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
@@ -1673,8 +1677,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
 	}
+	setCodecBytes(&expectedTP, marshalledVP8)
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
@@ -1727,8 +1731,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
 	}
+	setCodecBytes(&expectedTP, marshalledVP8)
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
@@ -1815,8 +1819,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
 	}
+	setCodecBytes(&expectedTP, marshalledVP8)
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
@@ -1914,8 +1918,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdf0,
 		},
 		incomingHeaderSize: 5,
-		codecBytes:         marshalledVP8,
 	}
+	setCodecBytes(&expectedTP, marshalledVP8)
 	actualTP, err = f.GetTranslationParams(extPkt, 1)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
