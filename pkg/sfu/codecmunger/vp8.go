@@ -50,7 +50,7 @@ type VP8 struct {
 	missingPictureIds  *orderedmap.OrderedMap[int32, int32]
 	droppedPictureIds  *orderedmap.OrderedMap[int32, bool]
 	exemptedPictureIds *orderedmap.OrderedMap[int32, bool]
-	marshalBuf         [8]byte
+	marshalBuf         [6]byte
 }
 
 func NewVP8(logger logger.Logger) *VP8 {
@@ -154,6 +154,8 @@ func (v *VP8) UpdateOffsets(extPkt *buffer.ExtPacket) {
 	v.exemptedPictureIds = orderedmap.NewOrderedMap[int32, bool]()
 }
 
+// UpdateAndGet returns a header backed by v. Callers must copy it before the
+// next call to UpdateAndGet.
 func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporalLayer int32) (int, []byte, error) {
 	vp8, ok := extPkt.Payload.(codec.VP8)
 	if !ok {

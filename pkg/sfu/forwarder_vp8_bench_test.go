@@ -27,8 +27,6 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-const benchmarkVP8PacketCount = 1024
-
 func newVP8BenchmarkPacket(t testing.TB, sequenceNumber uint16, pictureID uint16, isKeyFrame bool) *buffer.ExtPacket {
 	t.Helper()
 
@@ -78,9 +76,9 @@ func TestForwarderGetTranslationParamsKeepsVP8Header(t *testing.T) {
 }
 
 func BenchmarkVP8UpdateAndGet(b *testing.B) {
-	packets := make([]*buffer.ExtPacket, benchmarkVP8PacketCount)
-	for i := range packets {
-		packets[i] = newVP8BenchmarkPacket(b, uint16(i+1), uint16(i+128), i == 0)
+	packets := [2]*buffer.ExtPacket{
+		newVP8BenchmarkPacket(b, 1, 128, true),
+		newVP8BenchmarkPacket(b, 2, 129, false),
 	}
 
 	v := codecmunger.NewVP8(logger.GetLogger())
@@ -89,7 +87,7 @@ func BenchmarkVP8UpdateAndGet(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; b.Loop(); i++ {
-		inputSize, header, err := v.UpdateAndGet(packets[i%len(packets)], false, false, 0)
+		inputSize, header, err := v.UpdateAndGet(packets[i&1], false, false, 0)
 		if err != nil {
 			b.Fatal(err)
 		}

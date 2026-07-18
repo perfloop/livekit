@@ -33,6 +33,8 @@ type CodecMunger interface {
 	SetLast(extPkt *buffer.ExtPacket)
 	UpdateOffsets(extPkt *buffer.ExtPacket)
 
+	// UpdateAndGet returns a header backed by the munger. Callers must copy it
+	// before calling UpdateAndGet again.
 	UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporal int32) (int, []byte, error)
 
 	UpdateAndGetPadding(newPicture bool) ([]byte, error)
