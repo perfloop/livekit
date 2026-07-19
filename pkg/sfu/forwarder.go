@@ -205,10 +205,6 @@ type TranslationParams struct {
 	marker             bool
 }
 
-func (t *TranslationParams) codecHeaderBytes() []byte {
-	return t.codecBytes[:t.codecBytesSize]
-}
-
 // -------------------------------------------------------------------
 
 type refInfo struct {
