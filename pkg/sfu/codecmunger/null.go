@@ -49,6 +49,10 @@ func (n *Null) UpdateAndGet(_extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasG
 	return 0, nil, nil
 }
 
+func (n *Null) UpdateAndGetBuffer(_extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporal int32) (int, HeaderBytes, int, error) {
+	return 0, HeaderBytes{}, 0, nil
+}
+
 func (n *Null) UpdateAndGetPadding(newPicture bool) ([]byte, error) {
 	return nil, nil
 }

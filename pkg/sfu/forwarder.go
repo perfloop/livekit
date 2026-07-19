@@ -200,8 +200,13 @@ type TranslationParams struct {
 	rtp                TranslationParamsRTP
 	ddBytes            []byte
 	incomingHeaderSize int
-	codecBytes         []byte
+	codecBytes         codecmunger.HeaderBytes
+	codecBytesSize     int
 	marker             bool
+}
+
+func (t *TranslationParams) codecHeaderBytes() []byte {
+	return t.codecBytes[:t.codecBytesSize]
 }
 
 // -------------------------------------------------------------------
@@ -2192,7 +2197,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) error {
 	// codec specific forwarding check and any needed packet munging
 	tl := f.vls.SelectTemporal(extPkt)
-	inputSize, codecBytes, err := f.codecMunger.UpdateAndGet(
+	inputSize, codecBytes, codecBytesSize, err := f.codecMunger.UpdateAndGetBuffer(
 		extPkt,
 		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
 		tp.rtp.snOrdering == SequenceNumberOrderingGap,
@@ -2212,6 +2217,7 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *Translati
 	}
 	tp.incomingHeaderSize = inputSize
 	tp.codecBytes = codecBytes
+	tp.codecBytesSize = codecBytesSize
 	return nil
 }
 

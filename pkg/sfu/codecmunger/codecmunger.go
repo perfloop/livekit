@@ -26,6 +26,10 @@ var (
 	ErrFilteredVP8TemporalLayer        = errors.New("filtered VP8 temporal layer")
 )
 
+// HeaderBytes holds a marshaled VP8 payload descriptor.
+// VP8 descriptors are at most eight bytes.
+type HeaderBytes [8]byte
+
 type CodecMunger interface {
 	GetState() any
 	SeedState(state any)
@@ -34,6 +38,7 @@ type CodecMunger interface {
 	UpdateOffsets(extPkt *buffer.ExtPacket)
 
 	UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporal int32) (int, []byte, error)
+	UpdateAndGetBuffer(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporal int32) (int, HeaderBytes, int, error)
 
 	UpdateAndGetPadding(newPicture bool) ([]byte, error)
 }

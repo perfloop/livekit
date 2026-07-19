@@ -46,6 +46,11 @@ func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 	return f
 }
 
+func translationParamsWithCodecBytes(tp TranslationParams, codecBytes []byte) TranslationParams {
+	tp.codecBytesSize = copy(tp.codecBytes[:], codecBytes)
+	return tp
+}
+
 func TestForwarderMute(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 	require.False(t, f.IsMuted())
@@ -1585,7 +1590,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		IsKeyFrame: true,
 	}
 	marshalledVP8, _ := expectedVP8.Marshal()
-	expectedTP = TranslationParams{
+	expectedTP = translationParamsWithCodecBytes(TranslationParams{
 		isStarting:  true,
 		isSwitching: true,
 		isResuming:  true,
@@ -1595,9 +1600,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
 		marker:             true,
-	}
+	}, marshalledVP8)
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
@@ -1667,15 +1671,14 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
-	expectedTP = TranslationParams{
+	expectedTP = translationParamsWithCodecBytes(TranslationParams{
 		rtp: TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingContiguous,
 			extSequenceNumber: 23334,
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
-	}
+	}, marshalledVP8)
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
@@ -1721,15 +1724,14 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
-	expectedTP = TranslationParams{
+	expectedTP = translationParamsWithCodecBytes(TranslationParams{
 		rtp: TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingContiguous,
 			extSequenceNumber: 23335,
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
-	}
+	}, marshalledVP8)
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
@@ -1809,15 +1811,14 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
-	expectedTP = TranslationParams{
+	expectedTP = translationParamsWithCodecBytes(TranslationParams{
 		rtp: TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingContiguous,
 			extSequenceNumber: 23336,
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
-	}
+	}, marshalledVP8)
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
@@ -1907,7 +1908,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
-	expectedTP = TranslationParams{
+	expectedTP = translationParamsWithCodecBytes(TranslationParams{
 		isSwitching: true,
 		rtp: TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingContiguous,
@@ -1915,8 +1916,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdf0,
 		},
 		incomingHeaderSize: 5,
-		codecBytes:         marshalledVP8,
-	}
+	}, marshalledVP8)
 	actualTP, err = f.GetTranslationParams(extPkt, 1)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
