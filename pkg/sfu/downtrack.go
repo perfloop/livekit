@@ -80,7 +80,11 @@ const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
 	RTPBlankFramesMuteSeconds     = float32(1.0)
-	RTPBlankFramesCloseSeconds    = float32(0.2)
+
+	// rtpHeaderExtensionCapacity covers all extensions WriteRTP can add:
+	// dependency descriptor, playout delay, absolute capture time, abs-send-time, and transport-wide.
+	rtpHeaderExtensionCapacity = 5
+	RTPBlankFramesCloseSeconds = float32(0.2)
 
 	FlagStopRTXOnPLI = true
 
@@ -1114,6 +1118,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 
 	// translate RTP header
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
+	extensions := hdr.Extensions
+	if cap(extensions) != rtpHeaderExtensionCapacity {
+		extensions = make([]rtp.Extension, 0, rtpHeaderExtensionCapacity)
+	}
 	*hdr = rtp.Header{
 		Version:        extPkt.Packet.Version,
 		Padding:        extPkt.Packet.Padding,
@@ -1122,6 +1130,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		SequenceNumber: uint16(tp.rtp.extSequenceNumber),
 		Timestamp:      uint32(tp.rtp.extTimestamp),
 		SSRC:           d.ssrc,
+		Extensions:     extensions[:0],
 	}
 
 	// add extensions

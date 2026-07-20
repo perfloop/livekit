@@ -58,7 +58,10 @@ func (b *Base) TimeSinceLastSentPacket() time.Duration {
 func (b *Base) SendPacket(p *Packet) (int, error) {
 	defer func() {
 		if p.HeaderPool != nil && p.Header != nil {
-			*p.Header = rtp.Header{}
+			extensions := p.Header.Extensions
+			// Preserve the descriptor backing array without retaining prior payloads.
+			clear(extensions[:cap(extensions)])
+			*p.Header = rtp.Header{Extensions: extensions[:0]}
 			p.HeaderPool.Put(p.Header)
 		}
 
