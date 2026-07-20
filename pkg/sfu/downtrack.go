@@ -80,11 +80,7 @@ const (
 	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
 	RTPBlankFramesMuteSeconds     = float32(1.0)
-
-	// rtpHeaderExtensionCapacity covers all extensions WriteRTP can add:
-	// dependency descriptor, playout delay, absolute capture time, abs-send-time, and transport-wide.
-	rtpHeaderExtensionCapacity = 5
-	RTPBlankFramesCloseSeconds = float32(0.2)
+	RTPBlankFramesCloseSeconds    = float32(0.2)
 
 	FlagStopRTXOnPLI = true
 
@@ -1119,8 +1115,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	// translate RTP header
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
 	extensions := hdr.Extensions
-	if cap(extensions) != rtpHeaderExtensionCapacity {
-		extensions = make([]rtp.Extension, 0, rtpHeaderExtensionCapacity)
+	if cap(extensions) != pacer.MaxRetainedHeaderExtensions {
+		extensions = make([]rtp.Extension, 0, pacer.MaxRetainedHeaderExtensions)
 	}
 	*hdr = rtp.Header{
 		Version:        extPkt.Packet.Version,
@@ -1204,16 +1200,17 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	)
 	pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
 	*pacerPacket = pacer.Packet{
-		Header:             hdr,
-		HeaderPool:         RTPHeaderFactory,
-		HeaderSize:         headerSize,
-		Payload:            payload,
-		ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
-		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-		TransportWideExtID: uint8(d.transportWideExtID),
-		WriteStream:        d.writeStream,
-		Pool:               PacketFactory,
-		PoolEntity:         poolEntity,
+		Header:                 hdr,
+		HeaderPool:             RTPHeaderFactory,
+		RetainHeaderExtensions: true,
+		HeaderSize:             headerSize,
+		Payload:                payload,
+		ProbeClusterId:         ccutils.ProbeClusterId(d.probeClusterId.Load()),
+		AbsSendTimeExtID:       uint8(d.absSendTimeExtID),
+		TransportWideExtID:     uint8(d.transportWideExtID),
+		WriteStream:            d.writeStream,
+		Pool:                   PacketFactory,
+		PoolEntity:             poolEntity,
 	}
 	d.pacer.Enqueue(pacerPacket)
 

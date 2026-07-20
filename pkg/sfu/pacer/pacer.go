@@ -41,19 +41,24 @@ const (
 	PacerBehaviorLeakybucket PacerBehavior = "leaky-bucket"
 )
 
+// MaxRetainedHeaderExtensions bounds descriptor storage preserved when RetainHeaderExtensions is set.
+const MaxRetainedHeaderExtensions = 2
+
 type Packet struct {
-	Header             *rtp.Header
-	HeaderPool         *sync.Pool
-	HeaderSize         int
-	Payload            []byte
-	IsRTX              bool
-	ProbeClusterId     ccutils.ProbeClusterId
-	IsProbe            bool
-	AbsSendTimeExtID   uint8
-	TransportWideExtID uint8
-	WriteStream        webrtc.TrackLocalWriter
-	Pool               *sync.Pool
-	PoolEntity         *[]byte
+	Header     *rtp.Header
+	HeaderPool *sync.Pool
+	// RetainHeaderExtensions preserves a bounded, full descriptor slice when Header returns to HeaderPool.
+	RetainHeaderExtensions bool
+	HeaderSize             int
+	Payload                []byte
+	IsRTX                  bool
+	ProbeClusterId         ccutils.ProbeClusterId
+	IsProbe                bool
+	AbsSendTimeExtID       uint8
+	TransportWideExtID     uint8
+	WriteStream            webrtc.TrackLocalWriter
+	Pool                   *sync.Pool
+	PoolEntity             *[]byte
 }
 
 type Pacer interface {

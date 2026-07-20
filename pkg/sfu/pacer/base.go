@@ -59,9 +59,14 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 	defer func() {
 		if p.HeaderPool != nil && p.Header != nil {
 			extensions := p.Header.Extensions
-			// Preserve the descriptor backing array without retaining prior payloads.
-			clear(extensions[:cap(extensions)])
-			*p.Header = rtp.Header{Extensions: extensions[:0]}
+			if p.RetainHeaderExtensions &&
+				len(extensions) == cap(extensions) &&
+				cap(extensions) <= MaxRetainedHeaderExtensions {
+				clear(extensions)
+				*p.Header = rtp.Header{Extensions: extensions[:0]}
+			} else {
+				*p.Header = rtp.Header{}
+			}
 			p.HeaderPool.Put(p.Header)
 		}
 
