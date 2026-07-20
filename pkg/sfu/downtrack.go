@@ -1113,10 +1113,26 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 
 	// translate RTP header
-	hdr := RTPHeaderFactory.Get().(*rtp.Header)
-	extensions := hdr.Extensions
-	if cap(extensions) != pacer.MaxRetainedHeaderExtensions {
-		extensions = make([]rtp.Extension, 0, pacer.MaxRetainedHeaderExtensions)
+	// Retain a dedicated header only when the pacer-patched extensions are the
+	// only outgoing extensions.
+	useRetainedHeader := d.dependencyDescriptorExtID == 0 &&
+		d.playoutDelayExtID == 0 &&
+		d.absCaptureTimeExtID == 0 &&
+		d.absSendTimeExtID != 0 &&
+		d.transportWideExtID != 0 &&
+		d.absSendTimeExtID != d.transportWideExtID
+
+	var (
+		hdr         *rtp.Header
+		pacerPacket *pacer.Packet
+		extensions  []rtp.Extension
+	)
+	if useRetainedHeader {
+		pacerPacket = pacer.GetPacketWithRetainedHeader()
+		hdr = pacerPacket.Header
+		extensions = hdr.Extensions
+	} else {
+		hdr = RTPHeaderFactory.Get().(*rtp.Header)
 	}
 	*hdr = rtp.Header{
 		Version:        extPkt.Packet.Version,
@@ -1126,7 +1142,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		SequenceNumber: uint16(tp.rtp.extSequenceNumber),
 		Timestamp:      uint32(tp.rtp.extTimestamp),
 		SSRC:           d.ssrc,
-		Extensions:     extensions[:0],
+		Extensions:     extensions,
 	}
 
 	// add extensions
@@ -1198,20 +1214,21 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		0,
 		extPkt.IsOutOfOrder,
 	)
-	pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
-	*pacerPacket = pacer.Packet{
-		Header:                 hdr,
-		HeaderPool:             RTPHeaderFactory,
-		RetainHeaderExtensions: true,
-		HeaderSize:             headerSize,
-		Payload:                payload,
-		ProbeClusterId:         ccutils.ProbeClusterId(d.probeClusterId.Load()),
-		AbsSendTimeExtID:       uint8(d.absSendTimeExtID),
-		TransportWideExtID:     uint8(d.transportWideExtID),
-		WriteStream:            d.writeStream,
-		Pool:                   PacketFactory,
-		PoolEntity:             poolEntity,
+	if pacerPacket == nil {
+		pacerPacket = pacer.PacketFactory.Get().(*pacer.Packet)
+		*pacerPacket = pacer.Packet{
+			Header:     hdr,
+			HeaderPool: RTPHeaderFactory,
+		}
 	}
+	pacerPacket.HeaderSize = headerSize
+	pacerPacket.Payload = payload
+	pacerPacket.ProbeClusterId = ccutils.ProbeClusterId(d.probeClusterId.Load())
+	pacerPacket.AbsSendTimeExtID = uint8(d.absSendTimeExtID)
+	pacerPacket.TransportWideExtID = uint8(d.transportWideExtID)
+	pacerPacket.WriteStream = d.writeStream
+	pacerPacket.Pool = PacketFactory
+	pacerPacket.PoolEntity = poolEntity
 	d.pacer.Enqueue(pacerPacket)
 
 	if extPkt.IsKeyFrame {

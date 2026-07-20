@@ -57,16 +57,10 @@ func (b *Base) TimeSinceLastSentPacket() time.Duration {
 
 func (b *Base) SendPacket(p *Packet) (int, error) {
 	defer func() {
-		if p.HeaderPool != nil && p.Header != nil {
-			extensions := p.Header.Extensions
-			if p.RetainHeaderExtensions &&
-				len(extensions) == cap(extensions) &&
-				cap(extensions) <= MaxRetainedHeaderExtensions {
-				clear(extensions)
-				*p.Header = rtp.Header{Extensions: extensions[:0]}
-			} else {
-				*p.Header = rtp.Header{}
-			}
+		if p.retainedHeader != nil {
+			releaseRetainedHeader(p)
+		} else if p.HeaderPool != nil && p.Header != nil {
+			*p.Header = rtp.Header{}
 			p.HeaderPool.Put(p.Header)
 		}
 
@@ -94,6 +88,19 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 	}
 
 	return written, nil
+}
+
+func releaseRetainedHeader(p *Packet) {
+	retainedHeader := p.retainedHeader
+	clear(retainedHeader.extensions[:])
+	retainedHeader.header = rtp.Header{Extensions: retainedHeader.extensions[:0]}
+
+	if p.Header != &retainedHeader.header && p.HeaderPool != nil && p.Header != nil {
+		*p.Header = rtp.Header{}
+		p.HeaderPool.Put(p.Header)
+	}
+
+	retainedHeaderPool.Put(retainedHeader)
 }
 
 // patch just abs-send-time and transport-cc extensions if applicable
