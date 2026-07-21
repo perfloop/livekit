@@ -27,6 +27,10 @@ import (
 	"go.uber.org/atomic"
 )
 
+// A DownTrack writes at most five extensions, so retain its regular eight-slot
+// growth shape without retaining an unbounded header slice.
+const maxPooledHeaderExtensions = 8
+
 type Base struct {
 	logger logger.Logger
 
@@ -58,7 +62,12 @@ func (b *Base) TimeSinceLastSentPacket() time.Duration {
 func (b *Base) SendPacket(p *Packet) (int, error) {
 	defer func() {
 		if p.HeaderPool != nil && p.Header != nil {
-			*p.Header = rtp.Header{}
+			extensions := p.Header.Extensions[:0]
+			clear(p.Header.Extensions[:cap(p.Header.Extensions)])
+			if cap(extensions) > maxPooledHeaderExtensions {
+				extensions = nil
+			}
+			*p.Header = rtp.Header{Extensions: extensions}
 			p.HeaderPool.Put(p.Header)
 		}
 
