@@ -40,21 +40,35 @@ func TestBaseSendPacketClearsRetainedHeaderExtensionCapacity(t *testing.T) {
 		PayloadType: 111,
 		SSRC:        56,
 	}
-	activePayload := []byte{0x11, 0x22, 0x33}
-	omittedPayload := []byte{0x51, 0x84, 0x13, 0xa7, 0x3e}
-	if err := header.SetExtension(1, activePayload); err != nil {
-		t.Fatal(err)
+	stalePayload := []byte{0x51, 0x84, 0x13, 0xa7, 0x3e}
+	for id := uint8(1); id <= 5; id++ {
+		payload := []byte{id}
+		if id == 5 {
+			payload = stalePayload
+		}
+		if err := header.SetExtension(id, payload); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := header.SetExtension(2, omittedPayload); err != nil {
-		t.Fatal(err)
-	}
-	if cap(header.Extensions) < 2 {
-		t.Fatalf("header extension capacity = %d, want at least 2", cap(header.Extensions))
+	if cap(header.Extensions) < 5 {
+		t.Fatalf("header extension capacity = %d, want at least 5", cap(header.Extensions))
 	}
 
-	// Header.Extensions is exported. A caller can shorten it while a later
-	// capacity slot still contains an extension payload.
-	header.Extensions = header.Extensions[:1]
+	// Mirror a pooled DownTrack header after a five-extension packet followed
+	// by a packet that needs only abs-send-time and transport-wide extensions.
+	*header = rtp.Header{
+		Version:     2,
+		PayloadType: 111,
+		SSRC:        56,
+		Extensions:  header.Extensions[:0],
+	}
+	if err := header.SetExtension(1, []byte{0x11, 0x22, 0x33}); err != nil {
+		t.Fatal(err)
+	}
+	if err := header.SetExtension(2, []byte{0x44, 0x55}); err != nil {
+		t.Fatal(err)
+	}
+
 	packet := &Packet{
 		Header:      header,
 		HeaderPool:  headerPool,
@@ -64,28 +78,24 @@ func TestBaseSendPacketClearsRetainedHeaderExtensionCapacity(t *testing.T) {
 	if _, err := NewBase(logger.GetLogger(), nil).SendPacket(packet); err != nil {
 		t.Fatal(err)
 	}
-
-	pooled, ok := headerPool.Get().(*rtp.Header)
-	if !ok || pooled == nil {
-		t.Fatal("header pool did not return the sent header")
-	}
-	if pooled != header {
-		t.Fatal("header pool returned a different header")
+	if got := header.GetExtensionIDs(); len(got) != 0 {
+		t.Fatalf("header extensions after return = %v, want none", got)
 	}
 
-	// Reslice through the public Header.Extensions field and use public RTP
-	// operations to make any inactive retained descriptor observable.
-	pooled.Extensions = pooled.Extensions[:cap(pooled.Extensions)]
-	pooled.Extension = true
-	pooled.ExtensionProfile = rtp.ExtensionProfileOneByte
-	if got := pooled.GetExtension(2); got != nil {
-		t.Fatalf("pooled header retained omitted extension payload = %x", got)
+	// The test retains the local header pointer, so it does not depend on
+	// sync.Pool returning a value. Public RTP operations make any descriptor
+	// left in the retained backing capacity observable.
+	header.Extensions = header.Extensions[:cap(header.Extensions)]
+	header.Extension = true
+	header.ExtensionProfile = rtp.ExtensionProfileOneByte
+	if got := header.GetExtension(5); got != nil {
+		t.Fatalf("pooled header retained stale extension payload = %x", got)
 	}
-	wire, err := pooled.Marshal()
+	wire, err := header.Marshal()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(wire, omittedPayload) {
-		t.Fatalf("pooled header retained omitted extension bytes in serialized form: %x", wire)
+	if bytes.Contains(wire, stalePayload) {
+		t.Fatalf("pooled header retained stale extension bytes in serialized form: %x", wire)
 	}
 }
