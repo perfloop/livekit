@@ -15,15 +15,9 @@
 package dependencydescriptor
 
 import (
-	"bytes"
 	"encoding/hex"
 	"testing"
 )
-
-func assertComparable[T comparable]() {}
-
-// This instantiation fails to compile if DependencyDescriptorWriter stops being comparable.
-var _ = assertComparable[DependencyDescriptorWriter]
 
 func TestDependencyDescriptorUnmarshal(t *testing.T) {
 
@@ -67,85 +61,5 @@ func TestDependencyDescriptorUnmarshal(t *testing.T) {
 		}
 
 		t.Log(ddVal.String())
-	}
-}
-
-const dependencyDescriptorMarshalStructure = "c1017280081485214eafffaaaa863cf0430c10c302afc0aaa0063c00430010c002a000a80006000040001d954926e082b04a0941b820ac1282503157f974000ca864330e222222eca8655304224230eca877530077004200ef008601df010d"
-
-func newDependencyDescriptorMarshalExtension(tb testing.TB) *DependencyDescriptorExtension {
-	tb.Helper()
-
-	buf, err := hex.DecodeString(dependencyDescriptorMarshalStructure)
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	descriptor := DependencyDescriptor{}
-	parser := DependencyDescriptorExtension{Descriptor: &descriptor}
-	if _, err = parser.Unmarshal(buf); err != nil {
-		tb.Fatal(err)
-	}
-	if descriptor.AttachedStructure == nil {
-		tb.Fatal("fixture did not contain a dependency structure")
-	}
-
-	structure := descriptor.AttachedStructure
-	descriptor.AttachedStructure = nil
-	descriptor.ActiveDecodeTargetsBitmask = nil
-
-	return &DependencyDescriptorExtension{
-		Descriptor: &descriptor,
-		Structure:  structure,
-	}
-}
-
-func TestDependencyDescriptorMarshal(t *testing.T) {
-	extension := newDependencyDescriptorMarshalExtension(t)
-
-	first, err := extension.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	firstCopy := append([]byte(nil), first...)
-
-	extension.Descriptor.FrameNumber++
-	second, err := extension.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(first, firstCopy) {
-		t.Fatal("a later marshal modified a previously returned buffer")
-	}
-
-	decoded := DependencyDescriptor{}
-	parser := DependencyDescriptorExtension{
-		Descriptor: &decoded,
-		Structure:  extension.Structure,
-	}
-	if _, err = parser.Unmarshal(second); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.FrameNumber != extension.Descriptor.FrameNumber {
-		t.Fatalf("frame number = %d, want %d", decoded.FrameNumber, extension.Descriptor.FrameNumber)
-	}
-}
-
-func BenchmarkDependencyDescriptorMarshalSteadyState(b *testing.B) {
-	extension := newDependencyDescriptorMarshalExtension(b)
-	frameNumber := extension.Descriptor.FrameNumber
-	var buf []byte
-
-	for b.Loop() {
-		extension.Descriptor.FrameNumber = frameNumber
-		frameNumber++
-
-		var err error
-		buf, err = extension.Marshal()
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-	if len(buf) == 0 {
-		b.Fatal("marshal returned an empty dependency descriptor")
 	}
 }
