@@ -19,9 +19,6 @@ import (
 	"testing"
 )
 
-// DependencyDescriptorWriter remains usable as a map key.
-var _ map[DependencyDescriptorWriter]struct{}
-
 func TestDependencyDescriptorUnmarshal(t *testing.T) {
 
 	// hex bytes from traffic capture
