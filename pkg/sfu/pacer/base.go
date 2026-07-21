@@ -27,6 +27,10 @@ import (
 	"go.uber.org/atomic"
 )
 
+// A normal DownTrack has dependency-descriptor, playout-delay,
+// absolute-capture-time, and one negotiated BWE extension at most.
+const maxPooledHeaderExtensions = 4
+
 type Base struct {
 	logger logger.Logger
 
@@ -58,7 +62,13 @@ func (b *Base) TimeSinceLastSentPacket() time.Duration {
 func (b *Base) SendPacket(p *Packet) (int, error) {
 	defer func() {
 		if p.HeaderPool != nil && p.Header != nil {
-			*p.Header = rtp.Header{}
+			extensions := p.Header.Extensions
+			if cap(extensions) <= maxPooledHeaderExtensions {
+				clear(extensions[:cap(extensions)])
+			} else {
+				extensions = nil
+			}
+			*p.Header = rtp.Header{Extensions: extensions[:0]}
 			p.HeaderPool.Put(p.Header)
 		}
 
