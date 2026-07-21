@@ -59,7 +59,7 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 	defer func() {
 		if p.HeaderPool != nil && p.Header != nil {
 			extensions := p.Header.Extensions
-			clear(extensions)
+			clear(extensions[:cap(extensions)])
 			*p.Header = rtp.Header{Extensions: extensions[:0]}
 			p.HeaderPool.Put(p.Header)
 		}
