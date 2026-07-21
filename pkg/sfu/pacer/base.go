@@ -27,6 +27,10 @@ import (
 	"go.uber.org/atomic"
 )
 
+// DownTrack adds at most five RTP header extensions. Keep one append-growth step
+// while avoiding retention of an atypically large descriptor array in the pool.
+const maxPooledHeaderExtensions = 8
+
 type Base struct {
 	logger logger.Logger
 
@@ -58,7 +62,13 @@ func (b *Base) TimeSinceLastSentPacket() time.Duration {
 func (b *Base) SendPacket(p *Packet) (int, error) {
 	defer func() {
 		if p.HeaderPool != nil && p.Header != nil {
-			*p.Header = rtp.Header{}
+			extensions := p.Header.Extensions
+			if cap(extensions) <= maxPooledHeaderExtensions {
+				clear(extensions[:cap(extensions)])
+				*p.Header = rtp.Header{Extensions: extensions[:0]}
+			} else {
+				*p.Header = rtp.Header{}
+			}
 			p.HeaderPool.Put(p.Header)
 		}
 
