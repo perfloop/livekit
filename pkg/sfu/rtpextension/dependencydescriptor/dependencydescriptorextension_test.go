@@ -20,6 +20,11 @@ import (
 	"testing"
 )
 
+func assertComparable[T comparable]() {}
+
+// This instantiation fails to compile if DependencyDescriptorWriter stops being comparable.
+var _ = assertComparable[DependencyDescriptorWriter]
+
 func TestDependencyDescriptorUnmarshal(t *testing.T) {
 
 	// hex bytes from traffic capture
