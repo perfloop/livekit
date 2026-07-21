@@ -1114,6 +1114,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 
 	// translate RTP header
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
+	headerExtensions := hdr.Extensions
+	if cap(headerExtensions) != pacer.RTPHeaderExtensionsCapacity {
+		headerExtensions = make([]rtp.Extension, 0, pacer.RTPHeaderExtensionsCapacity)
+	}
 	*hdr = rtp.Header{
 		Version:        extPkt.Packet.Version,
 		Padding:        extPkt.Packet.Padding,
@@ -1122,6 +1126,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		SequenceNumber: uint16(tp.rtp.extSequenceNumber),
 		Timestamp:      uint32(tp.rtp.extTimestamp),
 		SSRC:           d.ssrc,
+		Extensions:     headerExtensions[:0],
 	}
 
 	// add extensions

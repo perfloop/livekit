@@ -31,6 +31,9 @@ var (
 	}
 )
 
+// RTPHeaderExtensionsCapacity bounds the extension descriptors retained by a pooled RTP header.
+const RTPHeaderExtensionsCapacity = 5
+
 // --------------------------------------
 
 type PacerBehavior string
