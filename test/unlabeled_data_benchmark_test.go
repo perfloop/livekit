@@ -28,22 +28,27 @@ import (
 
 const (
 	// TestDataPublishSlowSubscriber sends 100-byte reliable data as fast as
-	// possible to three subscribers. This uses the same width and payload size
-	// on the unlabeled ingress path, which scenarioDataUnlabeledPublish covers.
+	// possible to three subscribers. This benchmark uses the same sustained
+	// producer shape on the unlabeled ingress route exercised by
+	// scenarioDataUnlabeledPublish. Each benchmark iteration is one input
+	// record; the producer has no batch-sized record group.
 	unlabeledFanoutBenchmarkRecipients = 3
-	unlabeledFanoutBenchmarkMessages   = 24
 	unlabeledFanoutBenchmarkBytes      = 100
-	legacyUnlabeledProtocol            = 17
+	// TestDataPublishSlowSubscriber uses a 21,024-byte data-channel slow
+	// threshold. At its 100-byte payload size, 210 is that source test's
+	// record-equivalent backpressure boundary, not a batch size.
+	unlabeledFanoutBenchmarkMaxInFlight = 210
+	unlabeledFanoutBenchmarkQueue       = unlabeledFanoutBenchmarkMaxInFlight
+	unlabeledFanoutDeliveryTimeout      = 30 * time.Second
+	legacyUnlabeledProtocol             = 17
 )
 
-func unlabeledFanoutBenchmarkPayload(sequence uint64) []byte {
-	payload := make([]byte, unlabeledFanoutBenchmarkBytes)
+func fillUnlabeledFanoutBenchmarkPayload(payload []byte, sequence uint64) {
 	binary.LittleEndian.PutUint64(payload[:8], sequence)
 	binary.LittleEndian.PutUint64(payload[8:16], ^sequence)
 	for i := 16; i < len(payload); i++ {
 		payload[i] = byte(sequence + uint64(i*31))
 	}
-	return payload
 }
 
 func legacyUnlabeledClientOptions() *testclient.Options {
@@ -64,11 +69,88 @@ func BenchmarkUnlabeledDataLegacyFanout(b *testing.B) {
 	benchmarkUnlabeledDataFanout(b, legacyUnlabeledClientOptions)
 }
 
+func unlabeledDataClientOptions(opts *testclient.Options) *testclient.Options {
+	if opts == nil {
+		opts = &testclient.Options{AutoSubscribe: true}
+	}
+	opts.DisableSTUN = true
+	return opts
+}
+
 func unlabeledFanoutClientOptions(newOptions func() *testclient.Options) *testclient.Options {
 	if newOptions == nil {
-		return nil
+		return unlabeledDataClientOptions(nil)
 	}
-	return newOptions()
+	return unlabeledDataClientOptions(newOptions())
+}
+
+type unlabeledFanoutBenchmarkRecipient struct {
+	client    *testclient.RTCClient
+	received  chan []byte
+	delivered atomic.Uint64
+	notify    chan struct{}
+	errs      chan error
+	stop      chan struct{}
+}
+
+func (r *unlabeledFanoutBenchmarkRecipient) consume() {
+	var expected uint64
+	for {
+		select {
+		case data := <-r.received:
+			if len(data) != unlabeledFanoutBenchmarkBytes {
+				r.fail(fmt.Errorf("recipient %s received %d bytes, want %d", r.client.ID(), len(data), unlabeledFanoutBenchmarkBytes))
+				return
+			}
+			got := binary.LittleEndian.Uint64(data[:8])
+			if got != expected {
+				r.fail(fmt.Errorf("recipient %s sequence = %d, want %d", r.client.ID(), got, expected))
+				return
+			}
+			if binary.LittleEndian.Uint64(data[8:16]) != ^got {
+				r.fail(fmt.Errorf("recipient %s complement for sequence %d is invalid", r.client.ID(), got))
+				return
+			}
+			expected++
+			r.delivered.Store(expected)
+			select {
+			case r.notify <- struct{}{}:
+			default:
+			}
+		case <-r.stop:
+			return
+		}
+	}
+}
+
+func (r *unlabeledFanoutBenchmarkRecipient) fail(err error) {
+	select {
+	case r.errs <- err:
+	default:
+	}
+}
+
+func waitForUnlabeledFanoutDelivery(b *testing.B, recipients []*unlabeledFanoutBenchmarkRecipient, records uint64) {
+	b.Helper()
+
+	deadline := time.NewTimer(unlabeledFanoutDeliveryTimeout)
+	defer deadline.Stop()
+	for _, recipient := range recipients {
+		for recipient.delivered.Load() < records {
+			select {
+			case err := <-recipient.errs:
+				b.Fatal(err)
+			case <-recipient.notify:
+			case <-deadline.C:
+				b.Fatalf("recipient %s received %d records, want %d", recipient.client.ID(), recipient.delivered.Load(), records)
+			}
+		}
+		select {
+		case err := <-recipient.errs:
+			b.Fatal(err)
+		default:
+		}
+	}
 }
 
 func benchmarkUnlabeledDataFanout(b *testing.B, newOptions func() *testclient.Options) {
@@ -78,28 +160,32 @@ func benchmarkUnlabeledDataFanout(b *testing.B, newOptions func() *testclient.Op
 	publisher := createRTCClient("unlabeled-benchmark-publisher", defaultServerPort, testRTCServicePathv0, unlabeledFanoutClientOptions(newOptions))
 	b.Cleanup(publisher.Stop)
 
-	type recipient struct {
-		client   *testclient.RTCClient
-		received chan []byte
-	}
-	recipients := make([]recipient, 0, unlabeledFanoutBenchmarkRecipients)
+	recipients := make([]*unlabeledFanoutBenchmarkRecipient, 0, unlabeledFanoutBenchmarkRecipients)
 	clients := make([]*testclient.RTCClient, 0, unlabeledFanoutBenchmarkRecipients+1)
 	var receivedFrames atomic.Uint64
 	clients = append(clients, publisher)
 	for i := 0; i < unlabeledFanoutBenchmarkRecipients; i++ {
 		client := createRTCClient(fmt.Sprintf("unlabeled-benchmark-recipient-%d", i), defaultServerPort, testRTCServicePathv0, unlabeledFanoutClientOptions(newOptions))
-		received := make(chan []byte, unlabeledFanoutBenchmarkMessages)
+		recipient := &unlabeledFanoutBenchmarkRecipient{
+			client:   client,
+			received: make(chan []byte, unlabeledFanoutBenchmarkQueue),
+			notify:   make(chan struct{}, 1),
+			errs:     make(chan error, 1),
+			stop:     make(chan struct{}),
+		}
 		client.OnDataFrameReceived = func() {
 			receivedFrames.Add(1)
 		}
 		client.OnDataReceived = func(data []byte, _ string) {
-			if len(data) == 0 {
-				return
+			select {
+			case recipient.received <- append([]byte(nil), data...):
+			case <-recipient.stop:
 			}
-			received <- append([]byte(nil), data...)
 		}
+		go recipient.consume()
 		b.Cleanup(client.Stop)
-		recipients = append(recipients, recipient{client: client, received: received})
+		b.Cleanup(func() { close(recipient.stop) })
+		recipients = append(recipients, recipient)
 		clients = append(clients, client)
 	}
 	for _, client := range clients {
@@ -108,29 +194,29 @@ func benchmarkUnlabeledDataFanout(b *testing.B, newOptions func() *testclient.Op
 		}
 	}
 
+	payload := make([]byte, unlabeledFanoutBenchmarkBytes)
+	fillUnlabeledFanoutBenchmarkPayload(payload, 0)
+	if err := publisher.PublishDataUnlabeled(payload); err != nil {
+		b.Fatal(err)
+	}
+	// Wait for each raw data channel before timing so connection setup does not
+	// become a variable part of the per-record transport measurement.
+	waitForUnlabeledFanoutDelivery(b, recipients, 1)
+
+	var sent uint64
 	receivedFrames.Store(0)
-	var sequence uint64
+	b.ResetTimer()
 	for b.Loop() {
-		first := sequence
-		for i := 0; i < unlabeledFanoutBenchmarkMessages; i++ {
-			if err := publisher.PublishDataUnlabeled(unlabeledFanoutBenchmarkPayload(sequence)); err != nil {
-				b.Fatal(err)
-			}
-			sequence++
+		fillUnlabeledFanoutBenchmarkPayload(payload, sent+1)
+		if err := publisher.PublishDataUnlabeled(payload); err != nil {
+			b.Fatal(err)
 		}
-		for _, recipient := range recipients {
-			for i := 0; i < unlabeledFanoutBenchmarkMessages; i++ {
-				data := <-recipient.received
-				if len(data) != unlabeledFanoutBenchmarkBytes {
-					b.Fatalf("recipient %s received %d bytes, want %d", recipient.client.ID(), len(data), unlabeledFanoutBenchmarkBytes)
-				}
-				got := binary.LittleEndian.Uint64(data[:8])
-				want := first + uint64(i)
-				if got != want {
-					b.Fatalf("recipient %s record %d sequence = %d, want %d", recipient.client.ID(), i, got, want)
-				}
-			}
+		sent++
+		if sent > unlabeledFanoutBenchmarkMaxInFlight {
+			waitForUnlabeledFanoutDelivery(b, recipients, sent+1-unlabeledFanoutBenchmarkMaxInFlight)
 		}
 	}
-	b.ReportMetric(float64(receivedFrames.Load())/float64(sequence), "frames/record")
+	waitForUnlabeledFanoutDelivery(b, recipients, sent+1)
+	b.StopTimer()
+	b.ReportMetric(float64(receivedFrames.Load())/float64(sent), "frames/record")
 }

@@ -65,6 +65,7 @@ type RTCClient struct {
 	subscriber              *rtc.PCTransport
 	enabledCodecs           []*livekit.Codec
 	forceRelay              bool
+	disableSTUN             bool
 	transportReady          chan struct{}
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
@@ -144,6 +145,7 @@ type Options struct {
 	UseJoinRequestQueryParam  bool
 	RTCServicePath            string
 	ForceRelay                bool
+	DisableSTUN               bool
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -284,6 +286,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		c.signalRequestInterceptor = opts.SignalRequestInterceptor
 		c.signalResponseInterceptor = opts.SignalResponseInterceptor
 		c.forceRelay = opts.ForceRelay
+		c.disableSTUN = opts.DisableSTUN
 	}
 
 	return c, nil
@@ -528,7 +531,9 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 				Credential: is.Credential,
 			})
 		}
-		if len(iceServers) == 0 {
+		if c.disableSTUN {
+			iceServers = nil
+		} else if len(iceServers) == 0 {
 			iceServers = rtcConf.ICEServers
 		}
 		rtcconf := rtcConf
