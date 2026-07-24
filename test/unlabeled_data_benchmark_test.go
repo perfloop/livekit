@@ -3,6 +3,7 @@
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
@@ -20,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
+
 	testclient "github.com/livekit/livekit-server/test/client"
 )
 
@@ -27,6 +30,7 @@ const (
 	unlabeledFanoutBenchmarkRecipients = 8
 	unlabeledFanoutBenchmarkMessages   = 16
 	unlabeledFanoutBenchmarkBytes      = 96
+	legacyUnlabeledProtocol            = 17
 )
 
 func unlabeledFanoutBenchmarkPayload(sequence uint64) []byte {
@@ -39,11 +43,37 @@ func unlabeledFanoutBenchmarkPayload(sequence uint64) []byte {
 	return payload
 }
 
+func legacyUnlabeledClientOptions() *testclient.Options {
+	return &testclient.Options{
+		AutoSubscribe:            true,
+		UseJoinRequestQueryParam: true,
+		ClientInfo: &livekit.ClientInfo{
+			Sdk:      livekit.ClientInfo_GO,
+			Protocol: legacyUnlabeledProtocol,
+		},
+	}
+}
+
 func BenchmarkUnlabeledDataFanout(b *testing.B) {
+	benchmarkUnlabeledDataFanout(b, nil)
+}
+
+func BenchmarkUnlabeledDataLegacyFanout(b *testing.B) {
+	benchmarkUnlabeledDataFanout(b, legacyUnlabeledClientOptions)
+}
+
+func unlabeledFanoutClientOptions(newOptions func() *testclient.Options) *testclient.Options {
+	if newOptions == nil {
+		return nil
+	}
+	return newOptions()
+}
+
+func benchmarkUnlabeledDataFanout(b *testing.B, newOptions func() *testclient.Options) {
 	_, finish := setupSingleNodeTest(b.Name())
 	b.Cleanup(finish)
 
-	publisher := createRTCClient("unlabeled-benchmark-publisher", defaultServerPort, testRTCServicePathv0, nil)
+	publisher := createRTCClient("unlabeled-benchmark-publisher", defaultServerPort, testRTCServicePathv0, unlabeledFanoutClientOptions(newOptions))
 	b.Cleanup(publisher.Stop)
 
 	type recipient struct {
@@ -55,7 +85,7 @@ func BenchmarkUnlabeledDataFanout(b *testing.B) {
 	var receivedFrames atomic.Uint64
 	clients = append(clients, publisher)
 	for i := 0; i < unlabeledFanoutBenchmarkRecipients; i++ {
-		client := createRTCClient(fmt.Sprintf("unlabeled-benchmark-recipient-%d", i), defaultServerPort, testRTCServicePathv0, nil)
+		client := createRTCClient(fmt.Sprintf("unlabeled-benchmark-recipient-%d", i), defaultServerPort, testRTCServicePathv0, unlabeledFanoutClientOptions(newOptions))
 		received := make(chan []byte, unlabeledFanoutBenchmarkMessages)
 		client.OnDataFrameReceived = func() {
 			receivedFrames.Add(1)
