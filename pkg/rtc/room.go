@@ -2154,49 +2154,13 @@ func BroadcastDataPacketForRoom(
 	})
 }
 
-func marshalUnlabeledBatchData(sender livekit.ParticipantIdentity, records [][]byte) ([]byte, error) {
-	payload, err := MarshalUnlabeledBatch(records)
-	if err != nil {
-		return nil, err
-	}
-
-	topic := UnlabeledBatchTopic
-	return proto.Marshal(&livekit.DataPacket{
-		ParticipantIdentity: string(sender),
-		Value: &livekit.DataPacket_User{
-			User: &livekit.UserPacket{
-				Payload: payload,
-				Topic:   &topic,
-			},
-		},
-	})
-}
-
-// BroadcastDataMessageForRoom forwards each raw application payload as one message.
-// Capable recipients receive an explicitly tagged singleton batch so the receiver
-// framing contract is established before records are coalesced.
 func BroadcastDataMessageForRoom(r types.Room, source types.LocalParticipant, data []byte, logger logger.Logger) {
-	var sender livekit.ParticipantIdentity
-	if source != nil {
-		sender = source.Identity()
-	}
-
-	batchData, err := marshalUnlabeledBatchData(sender, [][]byte{data})
-	if err != nil {
-		logger.Errorw("failed to marshal unlabeled batch", err)
-		return
-	}
-
 	utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
 		if source != nil && op.ID() == source.ID() {
 			return
 		}
 
-		if op.ProtocolVersion().SupportsBatchedUnlabeled() {
-			op.SendDataMessage(livekit.DataPacket_RELIABLE, batchData, "", 0)
-			return
-		}
-		op.SendDataMessageUnlabeled(data, false, sender)
+		op.SendDataMessageUnlabeled(data, false, source.Identity())
 	})
 }
 
