@@ -45,8 +45,7 @@ func unlabeledFanoutBenchmarkPayload(sequence uint64) []byte {
 
 func legacyUnlabeledClientOptions() *testclient.Options {
 	return &testclient.Options{
-		AutoSubscribe:            true,
-		UseJoinRequestQueryParam: true,
+		AutoSubscribe: true,
 		ClientInfo: &livekit.ClientInfo{
 			Sdk:      livekit.ClientInfo_GO,
 			Protocol: legacyUnlabeledProtocol,

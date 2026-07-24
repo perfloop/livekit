@@ -189,9 +189,17 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 			}
 		}
 	} else {
-		connectUrl += fmt.Sprintf("?protocol=%d", types.CurrentProtocol)
-
+		protocol := int32(types.CurrentProtocol)
 		sdk := "go"
+		if opts != nil && opts.ClientInfo != nil {
+			if opts.ClientInfo.Protocol != 0 {
+				protocol = opts.ClientInfo.Protocol
+			}
+			if opts.ClientInfo.Sdk != livekit.ClientInfo_UNKNOWN {
+				sdk = opts.ClientInfo.Sdk.String()
+			}
+		}
+		connectUrl += fmt.Sprintf("?protocol=%d", protocol)
 		if opts != nil {
 			connectUrl += fmt.Sprintf("&auto_subscribe=%t", opts.AutoSubscribe)
 			connectUrl += fmt.Sprintf("&auto_subscribe_data_track=%t", opts.AutoSubscribeDataTrack)
@@ -211,9 +219,6 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 				}
 				if opts.ClientInfo.Os != "" {
 					connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
-				}
-				if opts.ClientInfo.Sdk != livekit.ClientInfo_UNKNOWN {
-					sdk = opts.ClientInfo.Sdk.String()
 				}
 			}
 		}

@@ -17,14 +17,25 @@ import (
 	"bytes"
 	"testing"
 	"time"
+
+	testclient "github.com/livekit/livekit-server/test/client"
 )
 
 func TestUnlabeledDataDelivery(t *testing.T) {
+	testUnlabeledDataDelivery(t, nil, nil)
+}
+
+func TestUnlabeledDataLegacyDelivery(t *testing.T) {
+	testUnlabeledDataDelivery(t, legacyUnlabeledClientOptions(), legacyUnlabeledClientOptions())
+}
+
+func testUnlabeledDataDelivery(t *testing.T, publisherOptions, recipientOptions *testclient.Options) {
+	t.Helper()
 	_, finish := setupSingleNodeTest(t.Name())
 	defer finish()
 
-	publisher := createRTCClient("unlabeled-publisher", defaultServerPort, testRTCServicePathv0, nil)
-	recipient := createRTCClient("unlabeled-recipient", defaultServerPort, testRTCServicePathv0, nil)
+	publisher := createRTCClient("unlabeled-publisher", defaultServerPort, testRTCServicePathv0, publisherOptions)
+	recipient := createRTCClient("unlabeled-recipient", defaultServerPort, testRTCServicePathv0, recipientOptions)
 	defer publisher.Stop()
 	defer recipient.Stop()
 	waitUntilConnected(t, publisher, recipient)
