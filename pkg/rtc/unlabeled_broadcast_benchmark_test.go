@@ -206,48 +206,41 @@ func TestRoomOnDataMessageUnlabeledLegacyDelivery(t *testing.T) {
 }
 
 func BenchmarkRoomOnDataMessageUnlabeledBurst(b *testing.B) {
-	// Closing a room is an existing lifecycle boundary. It is deliberately part
-	// of this workload so any reliable batch builder must synchronously drain
-	// records before participant transports are closed; the benchmark never
-	// samples an arbitrary scheduler-delay window.
+	// This is the ordinary current-protocol raw-broadcast path. The fake
+	// participants record each synchronous send, and ParallelExec returns only
+	// after the fan-out has completed, so the measurement does not infer delivery
+	// from scheduler timing or teardown.
+	room, participants := newUnlabeledBroadcastRoom(b, unlabeledBenchmarkRecipients+1, types.CurrentProtocol)
+	b.Cleanup(func() { room.Close(types.ParticipantCloseReasonNone) })
+
+	source := participants[0]
+	recorders := make([]*unlabeledSendRecorder, 0, unlabeledBenchmarkRecipients)
+	for _, participant := range participants[1:] {
+		recorder := &unlabeledSendRecorder{}
+		participant.SendDataMessageUnlabeledCalls(recorder.record)
+		recorders = append(recorders, recorder)
+	}
+
 	var sequence uint64
-	var totalSends uint64
-	var totalRecords uint64
-
 	for b.Loop() {
-		b.StopTimer()
-		room, participants := newUnlabeledBroadcastRoom(b, unlabeledBenchmarkRecipients+1, types.CurrentProtocol)
-		source := participants[0]
-		recorders := make([]*unlabeledSendRecorder, 0, unlabeledBenchmarkRecipients)
-		for _, participant := range participants[1:] {
-			recorder := &unlabeledSendRecorder{}
-			participant.SendDataMessageUnlabeledCalls(recorder.record)
-			recorders = append(recorders, recorder)
-		}
-		b.StartTimer()
-
-		for i := 0; i < unlabeledBenchmarkBurstMessages; i++ {
-			room.onDataMessageUnlabeled(source, unlabeledBenchmarkPayload(sequence))
-			sequence++
-		}
-		room.Close(types.ParticipantCloseReasonNone)
-		b.StopTimer()
-
-		var burstSends uint64
-		var checksum uint64
-		for _, recorder := range recorders {
-			burstSends += recorder.calls.Load()
-			checksum += recorder.checksum.Load()
-		}
-		if checksum == 0 {
-			b.Fatal("fanout result was not consumed")
-		}
-
-		totalSends += burstSends
-		totalRecords += unlabeledBenchmarkBurstMessages
-		b.StartTimer()
+		room.onDataMessageUnlabeled(source, unlabeledBenchmarkPayload(sequence))
+		sequence++
 	}
 	b.StopTimer()
 
-	b.ReportMetric(float64(totalSends)/float64(totalRecords), "recipient-sends/record")
+	var totalSends uint64
+	var checksum uint64
+	for _, recorder := range recorders {
+		calls := recorder.calls.Load()
+		if calls < uint64(b.N) {
+			b.Fatalf("recipient received %d sends, expected at least %d", calls, b.N)
+		}
+		totalSends += calls
+		checksum += recorder.checksum.Load()
+	}
+	if checksum == 0 {
+		b.Fatal("fanout result was not consumed")
+	}
+
+	b.ReportMetric(float64(totalSends)/float64(b.N), "recipient-sends/record")
 }
