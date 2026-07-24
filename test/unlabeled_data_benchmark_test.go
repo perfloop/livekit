@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/livekit/protocol/livekit"
 
@@ -39,7 +38,6 @@ const (
 	// record-equivalent backpressure boundary, not a batch size.
 	unlabeledFanoutBenchmarkMaxInFlight = 210
 	unlabeledFanoutBenchmarkQueue       = unlabeledFanoutBenchmarkMaxInFlight
-	unlabeledFanoutDeliveryTimeout      = 30 * time.Second
 	legacyUnlabeledProtocol             = 17
 )
 
@@ -69,19 +67,11 @@ func BenchmarkUnlabeledDataLegacyFanout(b *testing.B) {
 	benchmarkUnlabeledDataFanout(b, legacyUnlabeledClientOptions)
 }
 
-func unlabeledDataClientOptions(opts *testclient.Options) *testclient.Options {
-	if opts == nil {
-		opts = &testclient.Options{AutoSubscribe: true}
-	}
-	opts.DisableSTUN = true
-	return opts
-}
-
 func unlabeledFanoutClientOptions(newOptions func() *testclient.Options) *testclient.Options {
 	if newOptions == nil {
-		return unlabeledDataClientOptions(nil)
+		return &testclient.Options{AutoSubscribe: true}
 	}
-	return unlabeledDataClientOptions(newOptions())
+	return newOptions()
 }
 
 type unlabeledFanoutBenchmarkRecipient struct {
@@ -133,16 +123,12 @@ func (r *unlabeledFanoutBenchmarkRecipient) fail(err error) {
 func waitForUnlabeledFanoutDelivery(b *testing.B, recipients []*unlabeledFanoutBenchmarkRecipient, records uint64) {
 	b.Helper()
 
-	deadline := time.NewTimer(unlabeledFanoutDeliveryTimeout)
-	defer deadline.Stop()
 	for _, recipient := range recipients {
 		for recipient.delivered.Load() < records {
 			select {
 			case err := <-recipient.errs:
 				b.Fatal(err)
 			case <-recipient.notify:
-			case <-deadline.C:
-				b.Fatalf("recipient %s received %d records, want %d", recipient.client.ID(), recipient.delivered.Load(), records)
 			}
 		}
 		select {
@@ -165,23 +151,24 @@ func benchmarkUnlabeledDataFanout(b *testing.B, newOptions func() *testclient.Op
 	var receivedFrames atomic.Uint64
 	clients = append(clients, publisher)
 	for i := 0; i < unlabeledFanoutBenchmarkRecipients; i++ {
-		client := createRTCClient(fmt.Sprintf("unlabeled-benchmark-recipient-%d", i), defaultServerPort, testRTCServicePathv0, unlabeledFanoutClientOptions(newOptions))
 		recipient := &unlabeledFanoutBenchmarkRecipient{
-			client:   client,
 			received: make(chan []byte, unlabeledFanoutBenchmarkQueue),
 			notify:   make(chan struct{}, 1),
 			errs:     make(chan error, 1),
 			stop:     make(chan struct{}),
 		}
-		client.OnDataFrameReceived = func() {
+		opts := unlabeledFanoutClientOptions(newOptions)
+		opts.OnDataFrameReceived = func() {
 			receivedFrames.Add(1)
 		}
-		client.OnDataReceived = func(data []byte, _ string) {
+		opts.OnDataReceived = func(data []byte, _ string) {
 			select {
 			case recipient.received <- append([]byte(nil), data...):
 			case <-recipient.stop:
 			}
 		}
+		client := createRTCClient(fmt.Sprintf("unlabeled-benchmark-recipient-%d", i), defaultServerPort, testRTCServicePathv0, opts)
+		recipient.client = client
 		go recipient.consume()
 		b.Cleanup(client.Stop)
 		b.Cleanup(func() { close(recipient.stop) })
@@ -189,9 +176,7 @@ func benchmarkUnlabeledDataFanout(b *testing.B, newOptions func() *testclient.Op
 		clients = append(clients, client)
 	}
 	for _, client := range clients {
-		if err := client.WaitUntilConnected(10 * time.Second); err != nil {
-			b.Fatal(err)
-		}
+		<-client.Connected()
 	}
 
 	payload := make([]byte, unlabeledFanoutBenchmarkBytes)
@@ -205,6 +190,7 @@ func benchmarkUnlabeledDataFanout(b *testing.B, newOptions func() *testclient.Op
 
 	var sent uint64
 	receivedFrames.Store(0)
+	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
 		fillUnlabeledFanoutBenchmarkPayload(payload, sent+1)

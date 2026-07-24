@@ -65,8 +65,9 @@ type RTCClient struct {
 	subscriber              *rtc.PCTransport
 	enabledCodecs           []*livekit.Codec
 	forceRelay              bool
-	disableSTUN             bool
 	transportReady          chan struct{}
+	connected               chan struct{}
+	connectedOnce           sync.Once
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
 	trackSenders       map[string]*webrtc.RTPSender
@@ -145,7 +146,8 @@ type Options struct {
 	UseJoinRequestQueryParam  bool
 	RTCServicePath            string
 	ForceRelay                bool
-	DisableSTUN               bool
+	OnDataReceived            func(data []byte, sid string)
+	OnDataFrameReceived       func()
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -251,6 +253,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		pendingPublishedDataTracks: make(map[uint16]*livekit.DataTrackInfo),
 		subscribedDataTracks:       make(map[livekit.ParticipantID]map[uint16]*DataTrackRemote),
 		transportReady:             make(chan struct{}),
+		connected:                  make(chan struct{}),
 	}
 	c.nextDataTrackHandle.Store(uint32(rand.IntN(8192)))
 	c.ctx, c.cancel = context.WithCancel(context.Background())
@@ -286,7 +289,8 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		c.signalRequestInterceptor = opts.SignalRequestInterceptor
 		c.signalResponseInterceptor = opts.SignalResponseInterceptor
 		c.forceRelay = opts.ForceRelay
-		c.disableSTUN = opts.DisableSTUN
+		c.OnDataReceived = opts.OnDataReceived
+		c.OnDataFrameReceived = opts.OnDataFrameReceived
 	}
 
 	return c, nil
@@ -365,6 +369,9 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 	publisherHandler.OnFullyEstablishedCalls(func() {
 		logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "participantID", c.localParticipant.Sid)
 		c.publisherFullyEstablished.Store(true)
+		if c.useSinglePeerConnection || !c.subscriberAsPrimary.Load() {
+			c.markConnected()
+		}
 	})
 
 	ordered := true
@@ -458,6 +465,9 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 		subscriberHandler.OnFullyEstablishedCalls(func() {
 			logger.Debugw("subscriber fully established", "participant", c.localParticipant.Identity, "participantID", c.localParticipant.Sid)
 			c.subscriberFullyEstablished.Store(true)
+			if c.subscriberAsPrimary.Load() {
+				c.markConnected()
+			}
 		})
 		subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
 			// send remote an answer
@@ -531,9 +541,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 				Credential: is.Credential,
 			})
 		}
-		if c.disableSTUN {
-			iceServers = nil
-		} else if len(iceServers) == 0 {
+		if len(iceServers) == 0 {
 			iceServers = rtcConf.ICEServers
 		}
 		rtcconf := rtcConf
@@ -702,6 +710,16 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		c.lock.Unlock()
 	}
 	return nil
+}
+
+func (c *RTCClient) Connected() <-chan struct{} {
+	return c.connected
+}
+
+func (c *RTCClient) markConnected() {
+	c.connectedOnce.Do(func() {
+		close(c.connected)
+	})
 }
 
 func (c *RTCClient) WaitUntilConnected(timeout time.Duration) error {

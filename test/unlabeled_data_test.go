@@ -16,7 +16,6 @@ package test
 import (
 	"bytes"
 	"testing"
-	"time"
 
 	testclient "github.com/livekit/livekit-server/test/client"
 )
@@ -25,13 +24,20 @@ func TestUnlabeledDataDelivery(t *testing.T) {
 	testUnlabeledDataDelivery(t, nil, nil)
 }
 
-func waitUntilUnlabeledDataConnected(t *testing.T, clients ...*testclient.RTCClient) {
-	t.Helper()
+func waitUntilUnlabeledDataConnected(clients ...*testclient.RTCClient) {
 	for _, client := range clients {
-		if err := client.WaitUntilConnected(10 * time.Second); err != nil {
-			t.Fatal(err)
-		}
+		<-client.Connected()
 	}
+}
+
+func unlabeledDataRecipientOptions(opts *testclient.Options, received chan<- []byte) *testclient.Options {
+	if opts == nil {
+		opts = &testclient.Options{AutoSubscribe: true}
+	}
+	opts.OnDataReceived = func(data []byte, _ string) {
+		received <- append([]byte(nil), data...)
+	}
+	return opts
 }
 
 func TestUnlabeledDataLegacyDelivery(t *testing.T) {
@@ -42,21 +48,17 @@ func TestUnlabeledDataOrderedDelivery(t *testing.T) {
 	_, finish := setupSingleNodeTest(t.Name())
 	defer finish()
 
-	publisher := createRTCClient("unlabeled-ordered-publisher", defaultServerPort, testRTCServicePathv0, unlabeledDataClientOptions(nil))
-	recipient := createRTCClient("unlabeled-ordered-recipient", defaultServerPort, testRTCServicePathv0, unlabeledDataClientOptions(nil))
-	defer publisher.Stop()
-	defer recipient.Stop()
-
 	payloads := [][]byte{
 		[]byte("unlabeled-record-000"),
 		[]byte("unlabeled-record-001"),
 		[]byte("unlabeled-record-002"),
 	}
 	received := make(chan []byte, len(payloads))
-	recipient.OnDataReceived = func(data []byte, _ string) {
-		received <- append([]byte(nil), data...)
-	}
-	waitUntilUnlabeledDataConnected(t, publisher, recipient)
+	publisher := createRTCClient("unlabeled-ordered-publisher", defaultServerPort, testRTCServicePathv0, nil)
+	recipient := createRTCClient("unlabeled-ordered-recipient", defaultServerPort, testRTCServicePathv0, unlabeledDataRecipientOptions(nil, received))
+	defer publisher.Stop()
+	defer recipient.Stop()
+	waitUntilUnlabeledDataConnected(publisher, recipient)
 	payload := make([]byte, len(payloads[0]))
 	for _, want := range payloads {
 		copy(payload, want)
@@ -66,13 +68,9 @@ func TestUnlabeledDataOrderedDelivery(t *testing.T) {
 	}
 
 	for i, want := range payloads {
-		select {
-		case got := <-received:
-			if !bytes.Equal(got, want) {
-				t.Fatalf("payload %d = %q, want %q", i, got, want)
-			}
-		case <-time.After(10 * time.Second):
-			t.Fatalf("did not receive unlabeled payload %d", i)
+		got := <-received
+		if !bytes.Equal(got, want) {
+			t.Fatalf("payload %d = %q, want %q", i, got, want)
 		}
 	}
 }
@@ -82,27 +80,19 @@ func testUnlabeledDataDelivery(t *testing.T, publisherOptions, recipientOptions 
 	_, finish := setupSingleNodeTest(t.Name())
 	defer finish()
 
-	publisher := createRTCClient("unlabeled-publisher", defaultServerPort, testRTCServicePathv0, unlabeledDataClientOptions(publisherOptions))
-	recipient := createRTCClient("unlabeled-recipient", defaultServerPort, testRTCServicePathv0, unlabeledDataClientOptions(recipientOptions))
-	defer publisher.Stop()
-	defer recipient.Stop()
-
 	payload := []byte("unlabeled-data-payload")
 	received := make(chan []byte, 1)
-	recipient.OnDataReceived = func(data []byte, _ string) {
-		received <- append([]byte(nil), data...)
-	}
-	waitUntilUnlabeledDataConnected(t, publisher, recipient)
+	publisher := createRTCClient("unlabeled-publisher", defaultServerPort, testRTCServicePathv0, publisherOptions)
+	recipient := createRTCClient("unlabeled-recipient", defaultServerPort, testRTCServicePathv0, unlabeledDataRecipientOptions(recipientOptions, received))
+	defer publisher.Stop()
+	defer recipient.Stop()
+	waitUntilUnlabeledDataConnected(publisher, recipient)
 	if err := publisher.PublishDataUnlabeled(payload); err != nil {
 		t.Fatal(err)
 	}
 
-	select {
-	case data := <-received:
-		if !bytes.Equal(data, payload) {
-			t.Fatalf("payload = %q, want %q", data, payload)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("did not receive unlabeled data")
+	data := <-received
+	if !bytes.Equal(data, payload) {
+		t.Fatalf("payload = %q, want %q", data, payload)
 	}
 }
