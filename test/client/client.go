@@ -1143,9 +1143,20 @@ func (c *RTCClient) handleDataMessage(kind livekit.DataPacket_Kind, data []byte)
 	}
 	dp.Kind = kind
 	if val, ok := dp.Value.(*livekit.DataPacket_User); ok {
-		if c.OnDataReceived != nil {
-			c.OnDataReceived(val.User.Payload, val.User.ParticipantSid)
+		if c.OnDataReceived == nil {
+			return
 		}
+		if val.User.Topic != nil && *val.User.Topic == rtc.UnlabeledBatchTopic {
+			records, err := rtc.UnmarshalUnlabeledBatch(val.User.Payload)
+			if err != nil {
+				return
+			}
+			for _, record := range records {
+				c.OnDataReceived(record, val.User.ParticipantSid)
+			}
+			return
+		}
+		c.OnDataReceived(val.User.Payload, val.User.ParticipantSid)
 	}
 }
 
