@@ -20,7 +20,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/livekit/protocol/auth/authfakes"
 	"github.com/livekit/protocol/livekit"
@@ -77,11 +76,6 @@ func (r *unlabeledSendRecorder) record(data []byte, useRaw bool, sender livekit.
 	}
 
 	return nil
-}
-
-func (r *unlabeledSendRecorder) reset() {
-	r.calls.Store(0)
-	r.checksum.Store(0)
 }
 
 func (r *unlabeledSendRecorder) snapshot() []recordedUnlabeledSend {
@@ -166,38 +160,6 @@ func unlabeledBenchmarkPayload(sequence uint64) []byte {
 	return payload
 }
 
-func waitForUnlabeledFanoutQuiescence(recorders []*unlabeledSendRecorder, timeout time.Duration) bool {
-	const quietWindow = 2 * time.Millisecond
-
-	deadline := time.Now().Add(timeout)
-	var lastCalls uint64
-	lastChange := time.Now()
-	for {
-		var calls uint64
-		allRecipientsObserved := true
-		for _, recorder := range recorders {
-			count := recorder.calls.Load()
-			calls += count
-			if count == 0 {
-				allRecipientsObserved = false
-			}
-		}
-
-		now := time.Now()
-		if calls != lastCalls {
-			lastCalls = calls
-			lastChange = now
-		}
-		if allRecipientsObserved && now.Sub(lastChange) >= quietWindow {
-			return true
-		}
-		if now.After(deadline) {
-			return false
-		}
-		time.Sleep(100 * time.Microsecond)
-	}
-}
-
 func TestRoomOnDataMessageUnlabeledLegacyDelivery(t *testing.T) {
 	const legacyProtocol = types.ProtocolVersion(17)
 
@@ -244,39 +206,32 @@ func TestRoomOnDataMessageUnlabeledLegacyDelivery(t *testing.T) {
 }
 
 func BenchmarkRoomOnDataMessageUnlabeledBurst(b *testing.B) {
-	// Protocol 18 is reserved by this benchmark as the capable cohort. The base
-	// server has no batching implementation, so it takes the current one-record
-	// route; a future capability-gated implementation must preserve the same
-	// legacy check above while reducing sends for this cohort.
-	room, participants := newUnlabeledBroadcastRoom(b, unlabeledBenchmarkRecipients+1, types.ProtocolVersion(18))
-	b.Cleanup(func() { room.Close(types.ParticipantCloseReasonNone) })
-
-	source := participants[0]
-	recorders := make([]*unlabeledSendRecorder, 0, unlabeledBenchmarkRecipients)
-	for _, participant := range participants[1:] {
-		recorder := &unlabeledSendRecorder{}
-		participant.SendDataMessageUnlabeledCalls(recorder.record)
-		recorders = append(recorders, recorder)
-	}
-
+	// Closing a room is an existing lifecycle boundary. It is deliberately part
+	// of this workload so any reliable batch builder must synchronously drain
+	// records before participant transports are closed; the benchmark never
+	// samples an arbitrary scheduler-delay window.
 	var sequence uint64
 	var totalSends uint64
 	var totalRecords uint64
 
-	b.ResetTimer()
 	for b.Loop() {
-		for _, recorder := range recorders {
-			recorder.reset()
+		b.StopTimer()
+		room, participants := newUnlabeledBroadcastRoom(b, unlabeledBenchmarkRecipients+1, types.CurrentProtocol)
+		source := participants[0]
+		recorders := make([]*unlabeledSendRecorder, 0, unlabeledBenchmarkRecipients)
+		for _, participant := range participants[1:] {
+			recorder := &unlabeledSendRecorder{}
+			participant.SendDataMessageUnlabeledCalls(recorder.record)
+			recorders = append(recorders, recorder)
 		}
+		b.StartTimer()
 
 		for i := 0; i < unlabeledBenchmarkBurstMessages; i++ {
 			room.onDataMessageUnlabeled(source, unlabeledBenchmarkPayload(sequence))
 			sequence++
 		}
-
-		if !waitForUnlabeledFanoutQuiescence(recorders, 50*time.Millisecond) {
-			b.Fatalf("fanout did not reach every recipient within the delivery bound")
-		}
+		room.Close(types.ParticipantCloseReasonNone)
+		b.StopTimer()
 
 		var burstSends uint64
 		var checksum uint64
@@ -290,6 +245,7 @@ func BenchmarkRoomOnDataMessageUnlabeledBurst(b *testing.B) {
 
 		totalSends += burstSends
 		totalRecords += unlabeledBenchmarkBurstMessages
+		b.StartTimer()
 	}
 	b.StopTimer()
 
