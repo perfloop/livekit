@@ -2154,6 +2154,8 @@ func BroadcastDataPacketForRoom(
 	})
 }
 
+// BroadcastDataMessageForRoom forwards each raw application payload as one message.
+// Coalescing payloads here requires an explicitly negotiated receiver framing contract.
 func BroadcastDataMessageForRoom(r types.Room, source types.LocalParticipant, data []byte, logger logger.Logger) {
 	utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
 		if source != nil && op.ID() == source.ID() {
