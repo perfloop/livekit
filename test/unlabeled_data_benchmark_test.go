@@ -27,9 +27,12 @@ import (
 )
 
 const (
-	unlabeledFanoutBenchmarkRecipients = 8
-	unlabeledFanoutBenchmarkMessages   = 16
-	unlabeledFanoutBenchmarkBytes      = 96
+	// TestDataPublishSlowSubscriber sends 100-byte reliable data as fast as
+	// possible to three subscribers. This uses the same width and payload size
+	// on the unlabeled ingress path, which scenarioDataUnlabeledPublish covers.
+	unlabeledFanoutBenchmarkRecipients = 3
+	unlabeledFanoutBenchmarkMessages   = 24
+	unlabeledFanoutBenchmarkBytes      = 100
 	legacyUnlabeledProtocol            = 17
 )
 
