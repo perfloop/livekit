@@ -19,6 +19,12 @@ import (
 	"testing"
 )
 
+func requireComparable[T comparable]() {}
+
+func TestDependencyDescriptorWriterComparable(t *testing.T) {
+	requireComparable[DependencyDescriptorWriter]()
+}
+
 func TestDependencyDescriptorUnmarshal(t *testing.T) {
 
 	// hex bytes from traffic capture
