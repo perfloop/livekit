@@ -98,7 +98,10 @@ type RTCClient struct {
 	OnConnected             func()
 	OnDataReceived          func(data []byte, sid string)
 	OnDataUnlabeledReceived func(data []byte)
-	refreshToken            string
+	// OnDataFrameReceived observes one decoded UserPacket frame before payload delivery.
+	// It is intended for transport-level test instrumentation.
+	OnDataFrameReceived func()
+	refreshToken        string
 
 	// map of livekit.ParticipantID and last packet
 	lastPackets   map[livekit.ParticipantID]*rtp.Packet
@@ -1143,6 +1146,9 @@ func (c *RTCClient) handleDataMessage(kind livekit.DataPacket_Kind, data []byte)
 	}
 	dp.Kind = kind
 	if val, ok := dp.Value.(*livekit.DataPacket_User); ok {
+		if c.OnDataFrameReceived != nil {
+			c.OnDataFrameReceived()
+		}
 		if c.OnDataReceived != nil {
 			c.OnDataReceived(val.User.Payload, val.User.ParticipantSid)
 		}

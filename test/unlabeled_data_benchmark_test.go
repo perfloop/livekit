@@ -16,6 +16,7 @@ package test
 import (
 	"encoding/binary"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -51,11 +52,18 @@ func BenchmarkUnlabeledDataFanout(b *testing.B) {
 	}
 	recipients := make([]recipient, 0, unlabeledFanoutBenchmarkRecipients)
 	clients := make([]*testclient.RTCClient, 0, unlabeledFanoutBenchmarkRecipients+1)
+	var receivedFrames atomic.Uint64
 	clients = append(clients, publisher)
 	for i := 0; i < unlabeledFanoutBenchmarkRecipients; i++ {
 		client := createRTCClient(fmt.Sprintf("unlabeled-benchmark-recipient-%d", i), defaultServerPort, testRTCServicePathv0, nil)
 		received := make(chan []byte, unlabeledFanoutBenchmarkMessages)
+		client.OnDataFrameReceived = func() {
+			receivedFrames.Add(1)
+		}
 		client.OnDataReceived = func(data []byte, _ string) {
+			if len(data) == 0 {
+				return
+			}
 			received <- append([]byte(nil), data...)
 		}
 		b.Cleanup(client.Stop)
@@ -68,7 +76,7 @@ func BenchmarkUnlabeledDataFanout(b *testing.B) {
 		}
 	}
 
-	b.ReportAllocs()
+	receivedFrames.Store(0)
 	var sequence uint64
 	for b.Loop() {
 		first := sequence
@@ -92,4 +100,5 @@ func BenchmarkUnlabeledDataFanout(b *testing.B) {
 			}
 		}
 	}
+	b.ReportMetric(float64(receivedFrames.Load())/float64(sequence), "frames/record")
 }
