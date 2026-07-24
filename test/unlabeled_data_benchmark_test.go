@@ -68,6 +68,7 @@ func BenchmarkUnlabeledDataFanout(b *testing.B) {
 		}
 	}
 
+	b.ReportAllocs()
 	var sequence uint64
 	for b.Loop() {
 		first := sequence
